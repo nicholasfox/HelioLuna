@@ -1063,6 +1063,10 @@
         controls.enabled = true;
         camera.zoom = 1;
         camera.fov = 45;
+        camera.near = 0.01;
+        camera.far = 1000;
+        camera.up.set(0, 1, 0);
+        camera.position.set(0, 28, 0);
         camera.updateProjectionMatrix();
         controls.target.set(0, 0, 0);
         cameraOffset.copy(camera.position).sub(controls.target);
@@ -1073,6 +1077,9 @@
         controls.enabled = true;
         camera.zoom = 1;
         camera.fov = 45;
+        camera.near = 0.01;
+        camera.far = 1000;
+        camera.up.set(0, 1, 0);
         camera.updateProjectionMatrix();
         focusOn(earthMesh.position, EARTH_R);
         prevTarget.copy(earthMesh.position);
@@ -1082,6 +1089,9 @@
         controls.enabled = true;
         camera.zoom = 1;
         camera.fov = 45;
+        camera.near = 0.01;
+        camera.far = 1000;
+        camera.up.set(0, 1, 0);
         camera.updateProjectionMatrix();
         focusOn(moonMesh.position, MOON_R);
         prevTarget.copy(moonMesh.position);
