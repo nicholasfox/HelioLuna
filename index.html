@@ -885,6 +885,7 @@
     let surfaceHorizonRing = null;
     let surfaceCompassLabels = [];
     let surfaceTickLines = [];
+    let surfaceTickData = [];
     let surfaceSunSprite = null;
     let surfaceAtmoGlow = null;
     let surfaceAutoTrack = true;
@@ -978,8 +979,10 @@
       for (const line of surfaceTickLines) {
         if (line.parent) line.parent.remove(line);
         line.geometry.dispose();
+        line.material.dispose();
       }
       surfaceTickLines = [];
+      surfaceTickData = [];
 
       // Clean up Sun sprite
       if (surfaceSunSprite) {
@@ -1342,8 +1345,10 @@
       for (const line of surfaceTickLines) {
         if (line.parent) line.parent.remove(line);
         line.geometry.dispose();
+        line.material.dispose();
       }
       surfaceTickLines = [];
+      surfaceTickData = [];
 
       // Create compass labels at horizon
       const labelData = [
@@ -1367,6 +1372,14 @@
       const tickR = ringRadius * 1.2;
       const numR = ringRadius * 1.85;
       const tickMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthTest: false });
+      const tickPosArr = new Float32Array(360 * 2 * 3);
+      const tickGeo = new THREE.BufferGeometry();
+      tickGeo.setAttribute('position', new THREE.BufferAttribute(tickPosArr, 3));
+      tickGeo.setDrawRange(0, 0);
+      const tickSegments = new THREE.LineSegments(tickGeo, tickMat);
+      visualMesh.add(tickSegments);
+      surfaceTickLines = [tickSegments];
+      surfaceTickData = [];
       for (let deg = 0; deg < 360; deg += 10) {
         const rad = deg * Math.PI / 180;
         const dir = north.clone().multiplyScalar(Math.cos(rad))
@@ -1374,13 +1387,7 @@
         const mid = surfLocal.clone()
           .addScaledVector(normal, EYE_HEIGHT)
           .addScaledVector(dir, tickR);
-        const len = 0.5;
-        const top = mid.clone().addScaledVector(normal, len / 2);
-        const bottom = mid.clone().addScaledVector(normal, -len / 2);
-        const g = new THREE.BufferGeometry().setFromPoints([bottom, top]);
-        const line = new THREE.Line(g, tickMat);
-        visualMesh.add(line);
-        surfaceTickLines.push(line);
+        surfaceTickData.push({ mid: mid.clone(), normal: normal.clone() });
         // Number label (skip cardinal points already covered by N/S/E/W labels)
         if (deg % 10 === 0 && deg % 90 !== 0) {
           const sn = createTextSprite(String(deg), 'rgba(255,255,255,0.5)', 24);
@@ -1707,6 +1714,27 @@
       } else {
         spriteOnScreen = false;
         spriteScreenX = spriteScreenY = spriteScreenZ = 0;
+      }
+
+      // Fixed pixel size for azimuth tick lines
+      if (surfaceTickData.length && surfaceTickLines.length) {
+        const arr = surfaceTickLines[0].geometry.attributes.position.array;
+        for (let i = 0; i < surfaceTickData.length; i++) {
+          const { mid, normal } = surfaceTickData[i];
+          _labelWP.copy(mid);
+          const dist = camera.position.distanceTo(_labelWP) || 1;
+          const fovRad = camera.fov * Math.PI / 180;
+          const halfLen = 8 * dist * Math.tan(fovRad / 2) / window.innerHeight;
+          const idx = i * 6;
+          arr[idx]   = mid.x + normal.x * halfLen;
+          arr[idx+1] = mid.y + normal.y * halfLen;
+          arr[idx+2] = mid.z + normal.z * halfLen;
+          arr[idx+3] = mid.x - normal.x * halfLen;
+          arr[idx+4] = mid.y - normal.y * halfLen;
+          arr[idx+5] = mid.z - normal.z * halfLen;
+        }
+        surfaceTickLines[0].geometry.attributes.position.needsUpdate = true;
+        surfaceTickLines[0].geometry.setDrawRange(0, surfaceTickData.length * 2);
       }
 
       // Fixed pixel size for surface compass labels
