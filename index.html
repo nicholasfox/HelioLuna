@@ -884,6 +884,7 @@
     let surfaceFov = 30; // camera.fov value
     let surfaceHorizonRing = null;
     let surfaceCompassLabels = [];
+    let surfaceTickLines = [];
     let surfaceSunSprite = null;
     let surfaceAtmoGlow = null;
     let surfaceAutoTrack = true;
@@ -974,6 +975,11 @@
         s.material.dispose();
       }
       surfaceCompassLabels = [];
+      for (const line of surfaceTickLines) {
+        if (line.parent) line.parent.remove(line);
+        line.geometry.dispose();
+      }
+      surfaceTickLines = [];
 
       // Clean up Sun sprite
       if (surfaceSunSprite) {
@@ -1333,6 +1339,11 @@
         s.material.dispose();
       }
       surfaceCompassLabels = [];
+      for (const line of surfaceTickLines) {
+        if (line.parent) line.parent.remove(line);
+        line.geometry.dispose();
+      }
+      surfaceTickLines = [];
 
       // Create compass labels at horizon
       const labelData = [
@@ -1352,31 +1363,24 @@
         surfaceCompassLabels.push(s);
       }
 
-      // Azimuth ticks and numbers on the 3D compass ring
-      function makeTickSprite() {
-        const c = document.createElement('canvas');
-        c.width = 6; c.height = 18;
-        const ctx = c.getContext('2d');
-        ctx.clearRect(0, 0, 6, 18);
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
-        ctx.fillRect(2, 0, 2, 10);
-        return new THREE.Sprite(new THREE.SpriteMaterial({
-          map: new THREE.CanvasTexture(c), transparent: true, depthTest: false,
-        }));
-      }
+      // Azimuth tick lines and numbers on the 3D compass ring
       const tickR = ringRadius * 1.2;
       const numR = ringRadius * 1.85;
+      const tickMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthTest: false });
       for (let deg = 0; deg < 360; deg += 10) {
         const rad = deg * Math.PI / 180;
         const dir = north.clone().multiplyScalar(Math.cos(rad))
           .add(east.clone().multiplyScalar(Math.sin(rad))).normalize();
-        const pos = surfLocal.clone()
+        const mid = surfLocal.clone()
           .addScaledVector(normal, EYE_HEIGHT)
           .addScaledVector(dir, tickR);
-        const s = makeTickSprite();
-        s.position.copy(pos);
-        visualMesh.add(s);
-        surfaceCompassLabels.push(s);
+        const len = 0.3;
+        const inner = mid.clone().addScaledVector(dir, -len / 2);
+        const outer = mid.clone().addScaledVector(dir, len / 2);
+        const g = new THREE.BufferGeometry().setFromPoints([inner, outer]);
+        const line = new THREE.Line(g, tickMat);
+        visualMesh.add(line);
+        surfaceTickLines.push(line);
         // Number label (skip cardinal points already covered by N/S/E/W labels)
         if (deg % 10 === 0 && deg % 90 !== 0) {
           const sn = createTextSprite(String(deg), 'rgba(255,255,255,0.5)', 24);
@@ -1618,18 +1622,20 @@
       document.getElementById('debug-overlay').style.display = 'block';
 
       const altDeg = (debugSunAlt * 180 / Math.PI).toFixed(1);
-      const yawDeg = (surfaceYaw * 180 / Math.PI).toFixed(1);
+      const yawDeg = (((surfaceYaw * 180 / Math.PI) % 360) + 360) % 360;
       const camAltDeg = (debugCamAlt * 180 / Math.PI).toFixed(1);
       const currentDate = new Date(YEAR_START.getTime() + simDayOffset * DAY_MS);
       const dateStr = currentDate.toISOString().replace('T', ' ').substring(0, 19);
-      const latDeg = (surfaceLat * 180 / Math.PI).toFixed(2);
-      const lonDeg = (surfaceLon * 180 / Math.PI).toFixed(2);
+      const latDeg = Math.abs(surfaceLat * 180 / Math.PI);
+      const lonDeg = Math.abs(surfaceLon * 180 / Math.PI);
+      const latDir = surfaceLat >= 0 ? 'N' : 'S';
+      const lonDir = surfaceLon >= 0 ? 'E' : 'W';
 
-      document.getElementById('dbg-coord').textContent = `${latDeg}°, ${lonDeg}°`;
+      document.getElementById('dbg-coord').textContent = `${latDir} ${latDeg.toFixed(2)}°, ${lonDir} ${lonDeg.toFixed(2)}°`;
       document.getElementById('dbg-date').textContent = dateStr;
       document.getElementById('dbg-alt').textContent = `${altDeg}°`;
       document.getElementById('dbg-camalt').textContent = `${camAltDeg}°`;
-      document.getElementById('dbg-yaw').textContent = `${yawDeg}°`;
+      document.getElementById('dbg-yaw').textContent = `${yawDeg.toFixed(1)}°`;
       document.getElementById('dbg-track').textContent = surfaceAutoTrack ? '开' : '关';
     }
 
