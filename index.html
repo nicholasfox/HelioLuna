@@ -897,7 +897,6 @@
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     const selectHint = document.getElementById('select-hint');
-    const coordDisplay = document.getElementById('coord-display');
     const confirmBtn = document.getElementById('confirm-btn');
 
     // Create text sprite for compass labels
@@ -1029,7 +1028,6 @@
         cameraOffset.copy(camera.position).sub(controls.target);
         controls.update();
         selectHint.style.display = 'none';
-        coordDisplay.style.display = 'none';
       } else if (mode === 'geocentric') {
         controls.enabled = true;
         camera.zoom = 1;
@@ -1041,7 +1039,6 @@
         focusOn(earthMesh.position, EARTH_R);
         prevTarget.copy(earthMesh.position);
         selectHint.style.display = 'none';
-        coordDisplay.style.display = 'none';
       } else if (mode === 'selenocentric') {
         controls.enabled = true;
         camera.zoom = 1;
@@ -1053,7 +1050,6 @@
         focusOn(moonMesh.position, MOON_R);
         prevTarget.copy(moonMesh.position);
         selectHint.style.display = 'none';
-        coordDisplay.style.display = 'none';
       } else if (mode === 'earthSurface' || mode === 'moonSurface') {
         surfaceBody = mode === 'earthSurface' ? 'earth' : 'moon';
         surfaceConfirmed = false;
@@ -1064,7 +1060,6 @@
         focusOn(mesh.position, R);
         prevTarget.copy(mesh.position);
         selectHint.style.display = 'block';
-        coordDisplay.style.display = 'none';
         confirmBtn.style.display = 'none';
       }
     }
@@ -1130,8 +1125,6 @@
 
       const latDeg = (surfaceLat * 180 / Math.PI).toFixed(1);
       const lonDeg = (surfaceLon * 180 / Math.PI).toFixed(1);
-      coordDisplay.textContent = `${surfaceBody === 'earth' ? '地球' : '月球'} ${latDeg}°, ${lonDeg}°`;
-      coordDisplay.style.display = 'block';
       confirmBtn.style.display = 'block';
       selectHint.style.display = 'none';
     }
@@ -1157,8 +1150,6 @@
       targetMesh.add(surfaceFlag);
       const latDeg2 = (surfaceLat * 180 / Math.PI).toFixed(1);
       const lonDeg2 = (surfaceLon * 180 / Math.PI).toFixed(1);
-      coordDisplay.textContent = `${surfaceBody === 'earth' ? '地球' : '月球'} ${latDeg2}°, ${lonDeg2}°`;
-      coordDisplay.style.display = 'block';
       confirmBtn.style.display = 'block';
       selectHint.style.display = 'none';
     };
@@ -1350,9 +1341,9 @@
         { text: '东', color: '#ffaa44', dir: east },
         { text: '西', color: '#ffaa44', dir: east.clone().negate() },
       ];
-      const labelR = ringRadius * 1.6;
+      const labelR = ringRadius * 2.2;
       for (const { text, color, dir } of labelData) {
-        const s = createTextSprite(text, color);
+        const s = createTextSprite(text, color, 48);
         const pos = surfLocal.clone()
           .addScaledVector(normal, EYE_HEIGHT)
           .addScaledVector(dir, labelR);
@@ -1374,7 +1365,7 @@
         }));
       }
       const tickR = ringRadius * 1.2;
-      const numR = ringRadius * 1.5;
+      const numR = ringRadius * 1.85;
       for (let deg = 0; deg < 360; deg += 10) {
         const rad = deg * Math.PI / 180;
         const dir = north.clone().multiplyScalar(Math.cos(rad))
@@ -1388,7 +1379,7 @@
         surfaceCompassLabels.push(s);
         // Number label (skip cardinal points already covered by N/S/E/W labels)
         if (deg % 10 === 0 && deg % 90 !== 0) {
-          const sn = createTextSprite(String(deg), 'rgba(255,255,255,0.5)', 18);
+          const sn = createTextSprite(String(deg), 'rgba(255,255,255,0.5)', 24);
           const pn = surfLocal.clone()
             .addScaledVector(normal, EYE_HEIGHT)
             .addScaledVector(dir, numR);
@@ -1683,6 +1674,15 @@
       for (const { sprite } of seasonMarkers) {
         if (sprite.visible) setLabelPx(sprite, 24);
       }
+      for (const { cone } of seasonMarkers) {
+        if (cone.visible) {
+          const dist = camera.position.distanceTo(cone.position) || 1;
+          const fovRad = camera.fov * Math.PI / 180;
+          const px = 20;
+          const s = px * 4 * dist * Math.tan(fovRad / 2) / window.innerHeight;
+          cone.scale.set(s, s, s);
+        }
+      }
 
       // Sprite screen-space projection
       // MUST call updateMatrixWorld before getWorldPosition/project so
@@ -1705,7 +1705,7 @@
 
       // Fixed pixel size for surface compass labels
       for (const lbl of surfaceCompassLabels) {
-        setLabelPx(lbl, 28);
+        setLabelPx(lbl, 34);
       }
 
       updateDebugOverlay();
