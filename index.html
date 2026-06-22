@@ -735,21 +735,34 @@
       subsolarDot.position.copy(localSunDir.clone().multiplyScalar(EARTH_R + 0.005));
       subsolarDot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), localSunDir);
 
-      // Sync surface visual meshes
+      // Sync surface visual meshes (Earth and Moon visual spheres always synced)
       surfaceEarthMesh.position.copy(earthMesh.position);
       surfaceEarthMesh.quaternion.copy(earthMesh.quaternion);
       surfaceMoonMesh.position.copy(moonMesh.position);
       surfaceMoonMesh.quaternion.copy(moonMesh.quaternion);
 
-      // Real‑scale Moon: preserve direction from Astronomy, use real distance
+      // Real‑scale sky bodies: position based on camera mode
       const moonDir = new THREE.Vector3().subVectors(moonMesh.position, earthMesh.position).normalize();
-      surfaceMoonRealMesh.position.copy(earthMesh.position).add(moonDir.clone().multiplyScalar(REAL_MOON_DIST));
-      surfaceMoonRealMesh.quaternion.copy(moonMesh.quaternion);
+      if (cameraMode === 'earthSurface') {
+        // Earth surface: Moon in the sky at real distance
+        surfaceMoonRealMesh.position.copy(earthMesh.position).add(moonDir.clone().multiplyScalar(REAL_MOON_DIST));
+        surfaceMoonRealMesh.quaternion.copy(moonMesh.quaternion);
+      } else if (cameraMode === 'moonSurface') {
+        // Moon surface: Earth in the sky at real distance
+        surfaceEarthMesh.position.copy(moonMesh.position).sub(moonDir.clone().multiplyScalar(REAL_MOON_DIST));
+        surfaceEarthMesh.quaternion.copy(earthMesh.quaternion);
+        surfaceEarthMesh.visible = true;
+      } else {
+        // Neither: keep Moon real mesh at default (for world/geocentric/seleno views)
+        surfaceMoonRealMesh.position.copy(earthMesh.position).add(moonDir.clone().multiplyScalar(REAL_MOON_DIST));
+        surfaceMoonRealMesh.quaternion.copy(moonMesh.quaternion);
+      }
 
-      // Update directional light for surface visual sphere
-      const earthDir = earthMesh.position.clone().normalize();
-      surfaceDirLight.position.copy(earthDir.clone().negate().multiplyScalar(500));
-      surfaceDirTarget.position.copy(earthMesh.position);
+      // Update directional light target to current surface body
+      const lightTarget = (cameraMode === 'moonSurface') ? moonMesh.position : earthMesh.position;
+      const lightBodyPos = lightTarget.clone().normalize();
+      surfaceDirLight.position.copy(lightBodyPos.clone().negate().multiplyScalar(500));
+      surfaceDirTarget.position.copy(lightTarget);
 
     }
 
@@ -1232,20 +1245,18 @@
       const isEarth = surfaceBody === 'earth';
       let targetMesh, visualMesh, VISUAL_R, REAL_R;
       if (isEarth) {
-        // Real‑scale Earth surface: 1 unit = 1 Earth radius, observe from R=1
         targetMesh = earthMesh;
         visualMesh = surfaceEarthMesh;
         VISUAL_R = REAL_EARTH_R;
         REAL_R = REAL_EARTH_R;
-        camera.near = 1e-5;
-        camera.far = 30000;
       } else {
-        // Moon surface mode (legacy visual sphere)
         targetMesh = moonMesh;
-        visualMesh = surfaceMoonMesh;
-        VISUAL_R = SURFACE_VISUAL_R_MOON;
-        REAL_R = MOON_R;
+        visualMesh = surfaceMoonRealMesh;
+        VISUAL_R = REAL_MOON_R;
+        REAL_R = REAL_MOON_R;
       }
+      camera.near = 1e-5;
+      camera.far = 30000;
       camera.updateProjectionMatrix();
 
       const EYE_HEIGHT = Math.max(VISUAL_R * 1.57e-5, camera.near * 1.5);
@@ -1266,17 +1277,24 @@
         cone.visible = false;
         sprite.visible = false;
       }
-      // Bloom On in real‑scale Earth mode (Sun sprite needs it), off for legacy Moon
-      bloomPass.enabled = isEarth;
+      // Bloom on in real‑scale modes, off for legacy
+      bloomPass.enabled = true;
 
       const compass = document.getElementById('surface-compass');
       compass.style.display = 'block';
+      // Hide the body we stand on, show real-scale sky bodies
       if (isEarth) {
         moonMesh.visible = false;
         moonPhaseSprite.visible = false;
         surfaceMoonRealMesh.visible = true;
+        surfaceMoonMesh.visible = false;
+        surfaceEarthMesh.visible = true; // already on as visualMesh
       } else {
-        moonPhaseSprite.visible = true;
+        earthMesh.visible = false;
+        moonPhaseSprite.visible = false;
+        surfaceEarthMesh.visible = true; // Earth in the Moon sky
+        surfaceMoonMesh.visible = false;
+        surfaceMoonRealMesh.visible = true; // already on as visualMesh
       }
 
       const surfLocal = new THREE.Vector3(
@@ -1400,14 +1418,14 @@
         }
       }
 
-      // Create Sun sprite for surface mode
+      // Create Sun sprite for surface mode (both Earth and Moon)
       if (surfaceSunSprite) {
         if (surfaceSunSprite.parent) surfaceSunSprite.parent.remove(surfaceSunSprite);
         if (surfaceSunSprite.material.map) surfaceSunSprite.material.map.dispose();
         surfaceSunSprite.material.dispose();
         surfaceSunSprite = null;
       }
-      if (isEarth) {
+      {
         const sc = document.createElement('canvas');
         sc.width = 128; sc.height = 128;
         const sctx = sc.getContext('2d');
@@ -1474,13 +1492,13 @@
     });
 
     // ============================================================
-    // Surface mode — real‑scale for Earth, legacy visual‑sphere for Moon
+    // Surface mode — real‑scale camera
     // ============================================================
     function updateSurfaceCameraLocal() {
       const isEarth = surfaceBody === 'earth';
       const targetMesh = isEarth ? earthMesh : moonMesh;
-      const visualMesh = isEarth ? surfaceEarthMesh : surfaceMoonMesh;
-      const VISUAL_R = isEarth ? REAL_EARTH_R : SURFACE_VISUAL_R_MOON;
+      const visualMesh = isEarth ? surfaceEarthMesh : surfaceMoonRealMesh;
+      const VISUAL_R = isEarth ? REAL_EARTH_R : REAL_MOON_R;
 
       // Sync visual mesh each frame
       visualMesh.position.copy(targetMesh.position);
@@ -1506,17 +1524,7 @@
       const EYE_HEIGHT = Math.max(VISUAL_R * 1.57e-5, camera.near * 1.5);
       const camWorld = visualMesh.localToWorld(surfLocal.clone().add(normal.clone().multiplyScalar(EYE_HEIGHT)));
 
-      // In real‑scale Earth mode, camera = physics observer (no parallax).
-      // In legacy Moon mode, keep the REAL_R distinction for backward compat.
-      const observerPos = isEarth ? camWorld : (() => {
-        const REAL_R = MOON_R;
-        const surfReal = new THREE.Vector3(
-          REAL_R * Math.cos(surfaceLat) * Math.sin(surfaceLon),
-          REAL_R * Math.sin(surfaceLat),
-          REAL_R * Math.cos(surfaceLat) * Math.cos(surfaceLon)
-        );
-        return visualMesh.localToWorld(surfReal);
-      })();
+      const observerPos = camWorld;
 
       const lookWorld = visualMesh.localToWorld(surfLocal.clone().add(lookDir.multiplyScalar(200)));
 
@@ -1553,7 +1561,7 @@
 
       // Ray-sphere intersection
       const targetCenter = targetMesh.position.clone();
-      const targetR = isEarth ? REAL_EARTH_R : MOON_R;
+      const targetR = isEarth ? REAL_EARTH_R : REAL_MOON_R;
       const rayOrigin = observerPos.clone().add(worldNormal.clone().multiplyScalar(0.001));
       const sunRay = new THREE.Ray(rayOrigin, sunDir.clone());
       const hitPt = new THREE.Vector3();
@@ -1700,7 +1708,7 @@
       // Sprite screen-space projection
       // MUST call updateMatrixWorld before getWorldPosition/project so
       // camera position/direction set in updateSurfaceCameraLocal() take effect
-      if (surfaceSunSprite && surfaceSunSprite.parent && (cameraMode === 'earthSurface')) {
+      if (surfaceSunSprite && surfaceSunSprite.parent && (cameraMode === 'earthSurface' || cameraMode === 'moonSurface')) {
         const sw = new THREE.Vector3();
         surfaceSunSprite.parent.updateMatrixWorld(true);
         surfaceSunSprite.getWorldPosition(sw);
