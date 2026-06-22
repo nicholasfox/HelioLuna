@@ -1716,25 +1716,29 @@
         spriteScreenX = spriteScreenY = spriteScreenZ = 0;
       }
 
-      // Fixed pixel size for azimuth tick lines
+      // Fixed pixel size for azimuth tick lines (computed in visualMesh local space)
       if (surfaceTickData.length && surfaceTickLines.length) {
-        const arr = surfaceTickLines[0].geometry.attributes.position.array;
-        for (let i = 0; i < surfaceTickData.length; i++) {
-          const { mid, normal } = surfaceTickData[i];
-          _labelWP.copy(mid);
-          const dist = camera.position.distanceTo(_labelWP) || 1;
-          const fovRad = camera.fov * Math.PI / 180;
-          const halfLen = 8 * dist * Math.tan(fovRad / 2) / window.innerHeight;
-          const idx = i * 6;
-          arr[idx]   = mid.x + normal.x * halfLen;
-          arr[idx+1] = mid.y + normal.y * halfLen;
-          arr[idx+2] = mid.z + normal.z * halfLen;
-          arr[idx+3] = mid.x - normal.x * halfLen;
-          arr[idx+4] = mid.y - normal.y * halfLen;
-          arr[idx+5] = mid.z - normal.z * halfLen;
+        const parent = surfaceTickLines[0].parent;
+        if (parent) {
+          parent.updateMatrixWorld(true);
+          const localCam = new THREE.Vector3().copy(camera.position);
+          parent.worldToLocal(localCam);
+          const arr = surfaceTickLines[0].geometry.attributes.position.array;
+          for (let i = 0; i < surfaceTickData.length; i++) {
+            const { mid, normal } = surfaceTickData[i];
+            const dist = localCam.distanceTo(mid) || 1;
+            const halfLen = 8 * dist * Math.tan(camera.fov * Math.PI / 180 / 2) / window.innerHeight;
+            const idx = i * 6;
+            arr[idx]   = mid.x + normal.x * halfLen;
+            arr[idx+1] = mid.y + normal.y * halfLen;
+            arr[idx+2] = mid.z + normal.z * halfLen;
+            arr[idx+3] = mid.x - normal.x * halfLen;
+            arr[idx+4] = mid.y - normal.y * halfLen;
+            arr[idx+5] = mid.z - normal.z * halfLen;
+          }
+          surfaceTickLines[0].geometry.attributes.position.needsUpdate = true;
+          surfaceTickLines[0].geometry.setDrawRange(0, surfaceTickData.length * 2);
         }
-        surfaceTickLines[0].geometry.attributes.position.needsUpdate = true;
-        surfaceTickLines[0].geometry.setDrawRange(0, surfaceTickData.length * 2);
       }
 
       // Fixed pixel size for surface compass labels
