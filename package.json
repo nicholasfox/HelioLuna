@@ -1,0 +1,10 @@
+{
+  "name": "eclipses",
+  "private": true,
+  "dependencies": {
+    "playwright": "^1.61.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0"
+  }
+}
