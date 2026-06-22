@@ -142,15 +142,15 @@
     <select id="speedSelect" title="播放速度">
       <option value="0.0000116">1秒/秒</option>
       <option value="0.000694">1分/秒</option>
-      <option value="0.0417">1小时/秒</option>
+      <option value="0.0417" selected>1小时/秒</option>
       <option value="1">1天/秒</option>
       <option value="3" selected>3天/秒</option>
       <option value="10">10天/秒</option>
       <option value="30">30天/秒</option>
       <option value="__custom__">自定义</option>
     </select>
-    <input type="number" id="customSpeed" value="3" min="0.001" step="1" title="自定义速度（分钟/秒），滚轮调整" style="width:60px;font-size:12px;display:none">
-    <span id="speedDisplay">3天/秒</span>
+    <input type="number" id="customSpeed" value="60" min="0.001" step="1" title="自定义速度（分钟/秒），滚轮调整" style="width:60px;font-size:12px;display:none">
+    <span id="speedDisplay">1时/秒</span>
     <div id="brightness-group">
       <label>☀ 亮度</label>
       <input type="range" id="brightnessSlider" min="0.3" max="6" step="0.1" value="3" title="调节太阳光照强度">
@@ -881,39 +881,6 @@
       hemiLight.intensity = v * 0.8;
     });
 
-    // Draw azimuth ticks on the compass ring
-    (() => {
-      const canvas = document.createElement('canvas');
-      const size = 80;
-      canvas.width = size; canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      const cx = size / 2, cy = size / 2;
-      const tickR = 32, tickLen = 5, labelR = 24;
-      ctx.clearRect(0, 0, size, size);
-      for (let deg = 0; deg < 360; deg += 10) {
-        const rad = deg * Math.PI / 180;
-        const isMajor = deg % 30 === 0;
-        const innerR = isMajor ? tickR - 3 : tickR;
-        const outerR = tickR + tickLen;
-        ctx.beginPath();
-        ctx.moveTo(cx + innerR * Math.sin(rad), cy - innerR * Math.cos(rad));
-        ctx.lineTo(cx + outerR * Math.sin(rad), cy - outerR * Math.cos(rad));
-        ctx.strokeStyle = isMajor ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)';
-        ctx.lineWidth = isMajor ? 1.5 : 1;
-        ctx.stroke();
-        if (isMajor) {
-          ctx.fillStyle = 'rgba(255,255,255,0.5)';
-          ctx.font = '8px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(deg, cx + labelR * Math.sin(rad), cy - labelR * Math.cos(rad));
-        }
-      }
-      const compass = document.getElementById('surface-compass');
-      compass.style.backgroundImage = `url(${canvas.toDataURL()})`;
-      compass.style.backgroundSize = 'cover';
-    })();
-
     // ============================================================
     // Focus buttons — center on body, view from rotation axis
     // ============================================================
@@ -1402,6 +1369,39 @@
         s.position.copy(pos);
         visualMesh.add(s);
         surfaceCompassLabels.push(s);
+      }
+
+      // Azimuth ticks and numbers on the 3D compass ring
+      function makeTickSprite() {
+        const c = document.createElement('canvas');
+        c.width = 6; c.height = 18;
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, 6, 18);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillRect(2, 0, 2, 10);
+        return new THREE.Sprite(new THREE.SpriteMaterial({
+          map: new THREE.CanvasTexture(c), transparent: true, depthTest: false,
+        }));
+      }
+      const tickR = ringRadius * 1.2;
+      for (let deg = 0; deg < 360; deg += 10) {
+        const rad = deg * Math.PI / 180;
+        const dir = north.clone().multiplyScalar(Math.cos(rad))
+          .add(east.clone().multiplyScalar(Math.sin(rad))).normalize();
+        const pos = surfLocal.clone()
+          .addScaledVector(normal, EYE_HEIGHT)
+          .addScaledVector(dir, tickR);
+        if (deg % 30 === 0) {
+          const s = createTextSprite(String(deg), 'rgba(255,255,255,0.5)');
+          s.position.copy(pos);
+          visualMesh.add(s);
+          surfaceCompassLabels.push(s);
+        } else {
+          const s = makeTickSprite();
+          s.position.copy(pos);
+          visualMesh.add(s);
+          surfaceCompassLabels.push(s);
+        }
       }
 
       // Create Sun sprite for surface mode
