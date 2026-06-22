@@ -144,7 +144,7 @@
       <option value="0.000694">1分/秒</option>
       <option value="0.0417" selected>1小时/秒</option>
       <option value="1">1天/秒</option>
-      <option value="3" selected>3天/秒</option>
+      <option value="3">3天/秒</option>
       <option value="10">10天/秒</option>
       <option value="30">30天/秒</option>
       <option value="__custom__">自定义</option>
@@ -179,22 +179,12 @@
   </div>
   <div id="confirm-btn">确认选点</div>
   <div id="debug-overlay">
-    <span class="label">模式</span> <span id="dbg-body"></span><br>
     <span class="label">坐标</span> <span id="dbg-coord"></span><br>
     <span class="label">日期</span> <span id="dbg-date"></span><br>
     <span class="label">太阳高度</span> <span id="dbg-alt"></span><br>
-    <span class="label">俯仰目标</span> <span id="dbg-pitch"></span><br>
     <span class="label">相机实际俯仰</span> <span id="dbg-camalt"></span><br>
-    <span class="label">相机→真实太阳</span> <span id="dbg-camsunalt"></span><br>
-    <span class="label">中心→太阳</span> <span id="dbg-centeralt"></span><br>
-    <span class="label">太阳方位角</span> <span id="dbg-az"></span><br>
     <span class="label">相机偏航</span> <span id="dbg-yaw"></span><br>
-    <span class="label">偏航差</span> <span id="dbg-yawdiff"></span><br>
-    <span class="label">日长进度</span> <span id="dbg-daypct"></span><br>
-    <span class="label">射线→地表</span> <span id="dbg-ray"></span><br>
-    <span class="label">播放速度</span> <span id="dbg-speed"></span> 天/秒<br>
-    <span class="label">autoTrack</span> <span id="dbg-track"></span><br>
-    <span class="label">精灵屏幕</span> <span id="dbg-sprite"></span>
+    <span class="label">autoTrack</span> <span id="dbg-track"></span>
   </div>
   <div id="focus-btns">
     <button id="focusSun">太阳</button>
@@ -1384,6 +1374,7 @@
         }));
       }
       const tickR = ringRadius * 1.2;
+      const numR = ringRadius * 1.5;
       for (let deg = 0; deg < 360; deg += 10) {
         const rad = deg * Math.PI / 180;
         const dir = north.clone().multiplyScalar(Math.cos(rad))
@@ -1391,16 +1382,19 @@
         const pos = surfLocal.clone()
           .addScaledVector(normal, EYE_HEIGHT)
           .addScaledVector(dir, tickR);
-        if (deg % 30 === 0) {
-          const s = createTextSprite(String(deg), 'rgba(255,255,255,0.5)');
-          s.position.copy(pos);
-          visualMesh.add(s);
-          surfaceCompassLabels.push(s);
-        } else {
-          const s = makeTickSprite();
-          s.position.copy(pos);
-          visualMesh.add(s);
-          surfaceCompassLabels.push(s);
+        const s = makeTickSprite();
+        s.position.copy(pos);
+        visualMesh.add(s);
+        surfaceCompassLabels.push(s);
+        // Number label (skip cardinal points already covered by N/S/E/W labels)
+        if (deg % 10 === 0 && deg % 90 !== 0) {
+          const sn = createTextSprite(String(deg), 'rgba(255,255,255,0.5)', 18);
+          const pn = surfLocal.clone()
+            .addScaledVector(normal, EYE_HEIGHT)
+            .addScaledVector(dir, numR);
+          sn.position.copy(pn);
+          visualMesh.add(sn);
+          surfaceCompassLabels.push(sn);
         }
       }
 
@@ -1633,41 +1627,19 @@
       document.getElementById('debug-overlay').style.display = 'block';
 
       const altDeg = (debugSunAlt * 180 / Math.PI).toFixed(1);
-      const altCenterDeg = (debugSunAltCenter * 180 / Math.PI).toFixed(1);
-      const azDeg = (debugSunAzimuth * 180 / Math.PI).toFixed(1);
       const yawDeg = (surfaceYaw * 180 / Math.PI).toFixed(1);
-      const yawDiffDeg = (debugYawDiff * 180 / Math.PI).toFixed(1);
-      const dayPct = (debugDayFraction * 100).toFixed(0);
-      const isDay = debugSunAlt > -0.01;
-      const pitchDeg = (surfacePitch * 180 / Math.PI).toFixed(1);
       const camAltDeg = (debugCamAlt * 180 / Math.PI).toFixed(1);
-      const camSunAltDeg = (debugCamSunAlt * 180 / Math.PI).toFixed(1);
-      const bodyName = surfaceBody === 'earth' ? '地球' : '月球';
       const currentDate = new Date(YEAR_START.getTime() + simDayOffset * DAY_MS);
       const dateStr = currentDate.toISOString().replace('T', ' ').substring(0, 19);
       const latDeg = (surfaceLat * 180 / Math.PI).toFixed(2);
       const lonDeg = (surfaceLon * 180 / Math.PI).toFixed(2);
-      const rayHit = debugSunRayHit ? `是 (${debugSunRayDist.toFixed(2)})` : '否';
-      const speedVal = parseFloat(document.getElementById('speedSelect').value);
 
-      document.getElementById('dbg-body').textContent = bodyName;
       document.getElementById('dbg-coord').textContent = `${latDeg}°, ${lonDeg}°`;
       document.getElementById('dbg-date').textContent = dateStr;
       document.getElementById('dbg-alt').textContent = `${altDeg}°`;
-      document.getElementById('dbg-pitch').textContent = `${pitchDeg}°`;
       document.getElementById('dbg-camalt').textContent = `${camAltDeg}°`;
-      document.getElementById('dbg-camsunalt').textContent = `${camSunAltDeg}°`;
-      document.getElementById('dbg-centeralt').textContent = `${altCenterDeg}°`;
-      document.getElementById('dbg-az').textContent = `${azDeg}°`;
       document.getElementById('dbg-yaw').textContent = `${yawDeg}°`;
-      document.getElementById('dbg-yawdiff').textContent = `${yawDiffDeg}°`;
-      const dayEl = document.getElementById('dbg-daypct');
-      dayEl.textContent = `${dayPct}%`;
-      dayEl.className = isDay ? 'ok' : 'err';
-      document.getElementById('dbg-ray').textContent = rayHit;
-      document.getElementById('dbg-speed').textContent = speedVal.toFixed(4);
       document.getElementById('dbg-track').textContent = surfaceAutoTrack ? '开' : '关';
-      document.getElementById('dbg-sprite').textContent = `${spriteOnScreen ? '可见' : '不可见'} (${(spriteScreenX).toFixed(2)}, ${(spriteScreenY).toFixed(2)})`;
     }
 
     // ============================================================
@@ -1733,7 +1705,7 @@
 
       // Fixed pixel size for surface compass labels
       for (const lbl of surfaceCompassLabels) {
-        setLabelPx(lbl, 20);
+        setLabelPx(lbl, 28);
       }
 
       updateDebugOverlay();
