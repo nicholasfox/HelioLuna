@@ -1374,10 +1374,10 @@
         const mid = surfLocal.clone()
           .addScaledVector(normal, EYE_HEIGHT)
           .addScaledVector(dir, tickR);
-        const len = 0.3;
-        const inner = mid.clone().addScaledVector(dir, -len / 2);
-        const outer = mid.clone().addScaledVector(dir, len / 2);
-        const g = new THREE.BufferGeometry().setFromPoints([inner, outer]);
+        const len = 0.5;
+        const top = mid.clone().addScaledVector(normal, len / 2);
+        const bottom = mid.clone().addScaledVector(normal, -len / 2);
+        const g = new THREE.BufferGeometry().setFromPoints([bottom, top]);
         const line = new THREE.Line(g, tickMat);
         visualMesh.add(line);
         surfaceTickLines.push(line);
