@@ -33,9 +33,10 @@ test('world mode: body labels visible, sunMesh visible, no sun sprite', async ({
   expect(dbg.cameraMode).toBe('world');
   expect(dbg.sunMeshVisible).toBe(true);
   expect(dbg.sunSpriteVisible).toBeNull(); // no sprite created yet
-  expect(dbg.sunLabelVisible).toBe(true);
-  expect(dbg.earthLabelVisible).toBe(true);
-  expect(dbg.moonLabelVisible).toBe(true);
+  // Body labels removed per user request
+  expect(dbg.sunLabelVisible).toBeUndefined();
+  expect(dbg.earthLabelVisible).toBeUndefined();
+  expect(dbg.moonLabelVisible).toBeUndefined();
   await page.screenshot({ path: 'test-results/world-labels.png', fullPage: false });
 });
 
@@ -67,10 +68,10 @@ test('surface mode: sunMesh hidden, sun sprite visible and centered', async ({ p
   // Sprite must be on screen (centered at the Sun direction)
   expect(dbg.spriteOnScreen).toBe(true);
 
-  // Body labels hidden in surface mode
-  expect(dbg.sunLabelVisible).toBe(false);
-  expect(dbg.earthLabelVisible).toBe(false);
-  expect(dbg.moonLabelVisible).toBe(false);
+  // Body labels removed per user request
+  expect(dbg.sunLabelVisible).toBeUndefined();
+  expect(dbg.earthLabelVisible).toBeUndefined();
+  expect(dbg.moonLabelVisible).toBeUndefined();
 });
 
 test('drag disables autoTrack, sprite no longer centered', async ({ page }) => {

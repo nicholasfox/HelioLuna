@@ -137,16 +137,20 @@
   <div id="timeline-bar">
     <button id="playBtn">▶</button>
     <span id="dateDisplay">2025-03-20</span>
+    <input type="date" id="jumpDate" title="跳转到指定日期" style="width:110px;font-size:11px;padding:2px 4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#ccc">
     <input type="range" id="timeline" min="0" max="365" step="0.01" value="0" title="拖拽调整时间">
     <select id="speedSelect" title="播放速度">
+      <option value="0.0000116">1秒/秒</option>
+      <option value="0.000694">1分/秒</option>
       <option value="0.0417">1小时/秒</option>
       <option value="1">1天/秒</option>
-      <option value="3">3天/秒</option>
+      <option value="3" selected>3天/秒</option>
       <option value="10">10天/秒</option>
       <option value="30">30天/秒</option>
-      <option value="100">100天/秒</option>
+      <option value="__custom__">自定义</option>
     </select>
-    <span id="speedDisplay">·</span>
+    <input type="number" id="customSpeed" value="3" min="0.001" step="1" title="自定义速度（分钟/秒），滚轮调整" style="width:60px;font-size:12px;display:none">
+    <span id="speedDisplay">3天/秒</span>
     <div id="brightness-group">
       <label>☀ 亮度</label>
       <input type="range" id="brightnessSlider" min="0.3" max="6" step="0.1" value="3" title="调节太阳光照强度">
@@ -154,8 +158,6 @@
       <input type="range" id="sunBrightnessSlider" min="0" max="100" step="1" value="40" title="调节太阳视觉亮度">
       <label>环境光</label>
       <input type="range" id="ambientSlider" min="0" max="2" step="0.05" value="0" title="调节环境光强度（背阳面亮度）">
-      <label>月亮</label>
-      <input type="range" id="moonBrightnessSlider" min="0" max="1" step="0.01" value="0.6" title="调节月亮视觉亮度">
     </div>
   </div>
   <div id="info-overlay">拖拽鼠标旋转 · 滚轮缩放</div>
@@ -289,7 +291,7 @@
     controls.maxPolarAngle = Math.PI * 0.75;
     controls.rotateSpeed = 0.3;
     controls.minPolarAngle = 0.1;
-    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: null };
+    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.DOLLY };
     controls.update();
 
     // ============================================================
@@ -769,18 +771,76 @@
     const dateDispl = document.getElementById('dateDisplay');
     const speedSel  = document.getElementById('speedSelect');
     const speedDisp = document.getElementById('speedDisplay');
+    const customSpeed = document.getElementById('customSpeed');
 
     let playing = false;
     let simDayOffset = 0;    // days since vernal equinox start
     let lastFrame = performance.now();
 
-    function updateUI() {
+    function getSpeedDaysPerSec() {
+      if (speedSel.value === '__custom__') {
+        return parseFloat(customSpeed.value) / 1440;
+      }
+      return parseFloat(speedSel.value);
+    }
+
+    function updateUISpeed() {
+      const isCustom = speedSel.value === '__custom__';
+      customSpeed.style.display = isCustom ? 'inline' : 'none';
+      const daysPerSec = getSpeedDaysPerSec();
+      const minPerSec = daysPerSec * 1440;
+      if (isCustom) {
+        speedDisp.textContent = minPerSec.toFixed(minPerSec < 1 ? 4 : minPerSec < 10 ? 2 : 1) + '分/秒';
+      } else if (daysPerSec >= 1) {
+        speedDisp.textContent = daysPerSec + '天/秒';
+      } else if (daysPerSec >= 1/24) {
+        speedDisp.textContent = (daysPerSec * 24).toFixed(1) + '时/秒';
+      } else if (daysPerSec >= 1/1440) {
+        speedDisp.textContent = (daysPerSec * 1440).toFixed(1) + '分/秒';
+      } else {
+        speedDisp.textContent = (daysPerSec * 86400).toFixed(1) + '秒/秒';
+      }
+    }
+
+    function updateUIDate() {
       const d = new Date(YEAR_START.getTime() + simDayOffset * DAY_MS);
       dateDispl.textContent = d.toISOString().split('T')[0];
       timeline.value = simDayOffset;
-      const sp = parseFloat(speedSel.value);
-      speedDisp.textContent = sp >= 10 ? sp + '×' : '';
+      jumpDate.value = d.toISOString().split('T')[0];
     }
+
+    function updateUI() {
+      updateUIDate();
+      updateUISpeed();
+    }
+
+    speedSel.addEventListener('change', () => {
+      if (speedSel.value !== '__custom__') {
+        customSpeed.value = parseFloat(speedSel.value) * 1440;
+      }
+      updateUISpeed();
+    });
+    customSpeed.addEventListener('input', () => updateUISpeed());
+    customSpeed.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const step = e.deltaY < 0 ? 0.5 : -0.5;
+      customSpeed.value = Math.max(0.001, parseFloat(customSpeed.value || 0) + step);
+      if (speedSel.value !== '__custom__') speedSel.value = '__custom__';
+      updateUISpeed();
+    }, { passive: false });
+
+    const jumpDate = document.getElementById('jumpDate');
+    jumpDate.addEventListener('change', () => {
+      const d = new Date(jumpDate.value + 'T00:00:00');
+      if (isNaN(d.getTime())) return;
+      const offset = (d.getTime() - YEAR_START.getTime()) / DAY_MS;
+      simDayOffset = Math.max(0, Math.min(365, offset));
+      playing = false;
+      playBtn.textContent = '▶';
+      updateBodies();
+      updateUIDate();
+    });
+    jumpDate.value = YEAR_START.toISOString().split('T')[0];
 
     // ============================================================
     // Event listeners
@@ -821,13 +881,38 @@
       hemiLight.intensity = v * 0.8;
     });
 
-    const moonBrightnessSlider = document.getElementById('moonBrightnessSlider');
-    function updateMoonVisual() {
-      const v = parseFloat(moonBrightnessSlider.value);
-      moonPhaseMat.opacity = v;
-    }
-    moonBrightnessSlider.addEventListener('input', updateMoonVisual);
-    updateMoonVisual();
+    // Draw azimuth ticks on the compass ring
+    (() => {
+      const canvas = document.createElement('canvas');
+      const size = 80;
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const cx = size / 2, cy = size / 2;
+      const tickR = 32, tickLen = 5, labelR = 24;
+      ctx.clearRect(0, 0, size, size);
+      for (let deg = 0; deg < 360; deg += 10) {
+        const rad = deg * Math.PI / 180;
+        const isMajor = deg % 30 === 0;
+        const innerR = isMajor ? tickR - 3 : tickR;
+        const outerR = tickR + tickLen;
+        ctx.beginPath();
+        ctx.moveTo(cx + innerR * Math.sin(rad), cy - innerR * Math.cos(rad));
+        ctx.lineTo(cx + outerR * Math.sin(rad), cy - outerR * Math.cos(rad));
+        ctx.strokeStyle = isMajor ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = isMajor ? 1.5 : 1;
+        ctx.stroke();
+        if (isMajor) {
+          ctx.fillStyle = 'rgba(255,255,255,0.5)';
+          ctx.font = '8px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(deg, cx + labelR * Math.sin(rad), cy - labelR * Math.cos(rad));
+        }
+      }
+      const compass = document.getElementById('surface-compass');
+      compass.style.backgroundImage = `url(${canvas.toDataURL()})`;
+      compass.style.backgroundSize = 'cover';
+    })();
 
     // ============================================================
     // Focus buttons — center on body, view from rotation axis
@@ -884,17 +969,7 @@
     }
 
     // Body labels for world/geo/seleno modes
-    const sunLabel = createTextSprite('太阳', '#ffaa00', 48);
-    sunLabel.scale.set(4.0, 2.0, 1);
-    sunLabel.renderOrder = 999;
-    const earthLabel = createTextSprite('地球', '#44aaff', 48);
-    earthLabel.scale.set(4.0, 2.0, 1);
-    earthLabel.renderOrder = 999;
-    const moonLabel = createTextSprite('月球', '#aaaaaa', 48);
-    moonLabel.scale.set(4.0, 2.0, 1);
-    moonLabel.renderOrder = 999;
-    scene.add(sunLabel, earthLabel, moonLabel);
-    surfaceHiddenLabels.push(sunLabel, earthLabel, moonLabel);
+    // Body labels removed per user request
 
     function createFlag(color) {
       const group = new THREE.Group();
@@ -1604,7 +1679,7 @@
       if (playing) {
         const dt = Math.min((now - lastFrame) / 1000, 2.0); // cap at 2s to prevent jumps
         lastFrame = now;
-        simDayOffset += dt * parseFloat(speedSel.value);
+        simDayOffset += dt * getSpeedDaysPerSec();
         while (simDayOffset >= 365) simDayOffset -= 365;
         while (simDayOffset < 0) simDayOffset += 365;
         updateBodies();
@@ -1622,16 +1697,9 @@
         }
       }
 
-      // Update body label positions (only visible in world/geo/seleno modes)
-      scene.updateMatrixWorld(true);
-      sunLabel.position.copy(sunMesh.position);
-      sunLabel.position.y += SUN_R + 1.5;
-      earthLabel.position.copy(earthMesh.position);
-      earthLabel.position.y += EARTH_R + 1.5;
-      moonLabel.position.copy(moonMesh.position);
-      moonLabel.position.y += MOON_R + 1.5;
-      for (const lbl of [sunLabel, earthLabel, moonLabel]) {
-        if (lbl.visible) setLabelPx(lbl, 40);
+      // Season markers fixed pixel size
+      for (const { sprite } of seasonMarkers) {
+        if (sprite.visible) setLabelPx(sprite, 24);
       }
 
       // Sprite screen-space projection
@@ -1660,7 +1728,7 @@
 
       updateDebugOverlay();
       // Expose debug state for Playwright tests
-      window.__dbg = { debugSunAlt, debugSunAltCenter, debugSunAzimuth, debugDayFraction, debugCamAlt, debugCamSunAlt, simDayOffset, surfaceYaw, surfacePitch, surfaceAutoTrack, playing, spriteOnScreen, spriteScreenX, spriteScreenY, spriteScreenZ, cameraMode, sunMeshVisible: sunMesh.visible, sunSpriteVisible: surfaceSunSprite ? surfaceSunSprite.visible : null, sunLabelVisible: sunLabel.visible, earthLabelVisible: earthLabel.visible, moonLabelVisible: moonLabel.visible };
+      window.__dbg = { debugSunAlt, debugSunAltCenter, debugSunAzimuth, debugDayFraction, debugCamAlt, debugCamSunAlt, simDayOffset, surfaceYaw, surfacePitch, surfaceAutoTrack, playing, spriteOnScreen, spriteScreenX, spriteScreenY, spriteScreenZ, cameraMode, sunMeshVisible: sunMesh.visible, sunSpriteVisible: surfaceSunSprite ? surfaceSunSprite.visible : null };
     window.__setSimDayOffset = (v) => { simDayOffset = v; updateBodies(); updateUI(); };
     window.__setAutoTrack = (v) => { surfaceAutoTrack = v; };
       composer.render();
