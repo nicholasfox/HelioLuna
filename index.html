@@ -413,11 +413,16 @@
     );
     scene.add(earthOrbitLine);
     {
+      const cosObl = Math.cos(EARTH_TILT);
+      const sinObl = Math.sin(EARTH_TILT);
       const pts = [];
       for (let d = 0; d <= 365; d++) {
         const t = new Astronomy.AstroTime(new Date(YEAR_START.getTime() + d * DAY_MS));
         const v = Astronomy.HelioVector(Astronomy.Body.Earth, t);
-        pts.push(new THREE.Vector3(v.x * EARTH_SCALE, 0, v.y * EARTH_SCALE));
+        const eX = v.x;
+        const eY = v.y * cosObl + v.z * sinObl;
+        const eZ = -v.y * sinObl + v.z * cosObl;
+        pts.push(new THREE.Vector3(eX * EARTH_SCALE, eZ * EARTH_SCALE, eY * EARTH_SCALE));
       }
       earthOrbitGeo.setFromPoints(pts);
     }
@@ -701,10 +706,15 @@
         earthMesh.position.z + (mvEclY - evEclY) * MOON_SCALE
       );
 
-      // Moon tidal locking: always face same side toward Earth
-      const dx = moonMesh.position.x - earthMesh.position.x;
-      const dz = moonMesh.position.z - earthMesh.position.z;
-      moonMesh.rotation.y = Math.atan2(-dx, -dz);
+      // Moon tidal locking: point -Z axis toward Earth in 3D, then add axial tilt
+      const earthDir = new THREE.Vector3()
+        .subVectors(earthMesh.position, moonMesh.position)
+        .normalize();
+      moonMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), earthDir);
+      const tiltAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(moonMesh.quaternion);
+      moonMesh.quaternion.multiply(
+        new THREE.Quaternion().setFromAxisAngle(tiltAxis, MOON_TILT)
+      );
 
       // Sync Moon axis to Moon position
       moonAxis.position.copy(moonMesh.position);
@@ -715,10 +725,15 @@
         const t = new Astronomy.AstroTime(new Date(YEAR_START.getTime() + (simDayOffset + d) * DAY_MS));
         const mve = Astronomy.HelioVector(Astronomy.Body.Moon, t);
         const eve = Astronomy.HelioVector(Astronomy.Body.Earth, t);
+        const dX = mve.x - eve.x;
+        const dY = mve.y - eve.y;
+        const dZ = mve.z - eve.z;
+        const eclY = dY * cosObl + dZ * sinObl;
+        const eclZ = -dY * sinObl + dZ * cosObl;
         moonPts.push(new THREE.Vector3(
-          (mve.x - eve.x) * MOON_SCALE,
-          (mve.z - eve.z) * MOON_SCALE,
-          (mve.y - eve.y) * MOON_SCALE
+          dX * MOON_SCALE,
+          eclZ * MOON_SCALE,
+          eclY * MOON_SCALE
         ));
       }
       moonOrbitGeo.setFromPoints(moonPts);
