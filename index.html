@@ -715,6 +715,11 @@
       moonMesh.quaternion.multiply(
         new THREE.Quaternion().setFromAxisAngle(tiltAxis, MOON_TILT)
       );
+      // Ensure frame-to-frame quaternion continuity (avoid sign flip at degeneracy)
+      if (moonMesh.quaternion.dot(_prevMoonQuat) < 0) {
+        moonMesh.quaternion.negate();
+      }
+      _prevMoonQuat.copy(moonMesh.quaternion);
 
       // Sync Moon axis to Moon position
       moonAxis.position.copy(moonMesh.position);
@@ -917,6 +922,7 @@
     let surfaceSunSprite = null;
     let surfaceAtmoGlow = null;
     let surfaceAutoTrack = true;
+    const _prevMoonQuat = new THREE.Quaternion();
     let isDragging = false, dragStartX = 0, dragStartY = 0;
     // Debug overlay values (updated each frame)
     let debugSunAlt = 0, debugSunAltCenter = 0, debugDayFraction = 0;
@@ -1594,7 +1600,10 @@
             up.dot(north.clone().cross(sunHorizLocal)),
             north.dot(sunHorizLocal)
           );
-          surfaceYaw = yawToSun;
+          let diff = yawToSun - surfaceYaw;
+          if (diff > Math.PI) diff -= 2 * Math.PI;
+          if (diff < -Math.PI) diff += 2 * Math.PI;
+          surfaceYaw += diff;
         }
       }
 
