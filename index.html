@@ -710,7 +710,14 @@
       const earthDir = new THREE.Vector3()
         .subVectors(earthMesh.position, moonMesh.position)
         .normalize();
-      moonMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), earthDir);
+      // Build quaternion from orthonormal basis to avoid setFromUnitVectors 180° singularity
+      const targetNegZ = earthDir.clone();
+      const upRef = new THREE.Vector3(0, 1, 0);
+      if (Math.abs(targetNegZ.dot(upRef)) > 0.9999) upRef.set(1, 0, 0);
+      const basisX = new THREE.Vector3().crossVectors(upRef, targetNegZ).normalize();
+      const basisY = new THREE.Vector3().crossVectors(targetNegZ, basisX).normalize();
+      const basisMat = new THREE.Matrix4().makeBasis(basisX, basisY, targetNegZ);
+      moonMesh.quaternion.setFromRotationMatrix(basisMat);
       const tiltAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(moonMesh.quaternion);
       moonMesh.quaternion.multiply(
         new THREE.Quaternion().setFromAxisAngle(tiltAxis, MOON_TILT)
@@ -1524,6 +1531,7 @@
       // Sync visual mesh each frame
       visualMesh.position.copy(targetMesh.position);
       visualMesh.quaternion.copy(targetMesh.quaternion);
+      visualMesh.updateMatrixWorld(true);
 
       const surfLocal = new THREE.Vector3(
         VISUAL_R * Math.cos(surfaceLat) * Math.sin(surfaceLon),
@@ -1601,9 +1609,11 @@
             north.dot(sunHorizLocal)
           );
           let diff = yawToSun - surfaceYaw;
-          if (diff > Math.PI) diff -= 2 * Math.PI;
-          if (diff < -Math.PI) diff += 2 * Math.PI;
+          const TAU = 2 * Math.PI;
+          diff = ((diff % TAU) + TAU) % TAU;
+          if (diff > Math.PI) diff -= TAU;
           surfaceYaw += diff;
+          surfaceYaw = ((surfaceYaw % TAU) + TAU) % TAU;
         }
       }
 
