@@ -559,7 +559,7 @@
     // ============================================================
     // Starfield — random sphere distribution (enhanced)
     // ============================================================
-    (() => {
+    let starfield = (() => {
       const count = 5000;
       const pos = new Float32Array(count * 3);
       for (let i = 0; i < count; i++) {
@@ -572,9 +572,12 @@
       }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({
         color: 0xffffff, size: 0.4, sizeAttenuation: false, depthWrite: false,
-      })));
+        transparent: true, opacity: 1,
+      }));
+      scene.add(pts);
+      return pts;
     })();
 
     // Sky removed per user request — scene background (0x000008) + starfield
@@ -724,7 +727,7 @@
       );
       // Ensure frame-to-frame quaternion continuity (avoid sign flip at degeneracy)
       if (moonMesh.quaternion.dot(_prevMoonQuat) < 0) {
-        moonMesh.quaternion.negate();
+        moonMesh.quaternion.set(-moonMesh.quaternion.x, -moonMesh.quaternion.y, -moonMesh.quaternion.z, -moonMesh.quaternion.w);
       }
       _prevMoonQuat.copy(moonMesh.quaternion);
 
@@ -928,6 +931,7 @@
     let surfaceTickData = [];
     let surfaceSunSprite = null;
     let surfaceAtmoGlow = null;
+    let surfaceSkyDome = null;
     let surfaceAutoTrack = true;
     const _prevMoonQuat = new THREE.Quaternion();
     let isDragging = false, dragStartX = 0, dragStartY = 0;
@@ -1041,6 +1045,17 @@
         surfaceAtmoGlow.material.dispose();
         surfaceAtmoGlow = null;
       }
+
+      // Clean up sky dome
+      if (surfaceSkyDome) {
+        if (surfaceSkyDome.parent) surfaceSkyDome.parent.remove(surfaceSkyDome);
+        surfaceSkyDome.geometry.dispose();
+        surfaceSkyDome.material.dispose();
+        surfaceSkyDome = null;
+      }
+
+      // Restore starfield visibility when leaving surface mode
+      starfield.visible = true;
 
       // Restore default visibility for all surface‑related objects
       earthMesh.visible = true;
@@ -1516,6 +1531,27 @@
       surfaceAtmoGlow.rotateX(Math.PI / 2);
       visualMesh.add(surfaceAtmoGlow);
 
+      // Sky dome for Earth surface mode (covers starfield during daytime)
+      if (surfaceSkyDome) {
+        if (surfaceSkyDome.parent) surfaceSkyDome.parent.remove(surfaceSkyDome);
+        surfaceSkyDome.geometry.dispose();
+        surfaceSkyDome.material.dispose();
+        surfaceSkyDome = null;
+      }
+      if (isEarth) {
+        const domeGeo = new THREE.SphereGeometry(100, 32, 32);
+        const domeMat = new THREE.MeshBasicMaterial({
+          color: 0x87CEEB,
+          transparent: true,
+          opacity: 0.25,
+          side: THREE.BackSide,
+          depthWrite: false,
+        });
+        surfaceSkyDome = new THREE.Mesh(domeGeo, domeMat);
+        surfaceSkyDome.frustumCulled = false;
+        scene.add(surfaceSkyDome);
+      }
+
       updateSurfaceCameraLocal();
     });
 
@@ -1588,6 +1624,20 @@
         surfaceSunSprite.visible = sunAlt > -0.05;
       }
 
+      // Smooth day/night transition for sky dome and starfield
+      const dayFactor = Math.max(0, Math.min(1, (sunAlt / 0.035 + 1) / 2));
+      const fade = dayFactor * dayFactor * (3 - 2 * dayFactor);
+
+      if (surfaceSkyDome) {
+        surfaceSkyDome.position.copy(camWorld);
+        const op = isEarth ? fade * 0.25 : 0;
+        surfaceSkyDome.material.opacity = op;
+        surfaceSkyDome.visible = op > 0;
+      }
+
+      starfield.material.opacity = 1 - fade;
+      starfield.visible = !isEarth || fade < 1;
+
       // Ray-sphere intersection
       const targetCenter = targetMesh.position.clone();
       const targetR = isEarth ? REAL_EARTH_R : REAL_MOON_R;
@@ -1603,6 +1653,7 @@
         surfacePitch = Math.max(0.0, Math.min(Math.PI / 2 - 0.01, sunAlt));
         const sunLocalFrame = visualMesh.worldToLocal(sunMesh.position.clone()).sub(surfLocal).normalize();
         const sunHorizLocal = sunLocalFrame.clone().sub(up.clone().multiplyScalar(sunLocalFrame.dot(up))).normalize();
+        window._debugSunHorizLenSq = sunHorizLocal.lengthSq();
         if (sunHorizLocal.lengthSq() > 0.001) {
           const yawToSun = Math.atan2(
             up.dot(north.clone().cross(sunHorizLocal)),
@@ -1630,6 +1681,22 @@
         debugYawDiff = debugSunAzimuth;
       }
       debugDayFraction = Math.max(0, Math.min(1, 0.5 + debugSunAlt / Math.PI));
+
+      // Freeze debug: log state near -76.9° sun altitude
+      if (Math.abs(sunAlt + 1.342) < 0.05) {
+        const miv = visualMesh && visualMesh.matrixWorldInverse;
+        const mivStr = miv ? miv.elements.join(',') : '(missing)';
+        console.log('[FREEZE_DEBUG]', JSON.stringify({
+          sunAlt: (sunAlt * 180 / Math.PI).toFixed(2),
+          surfacePitch: (surfacePitch * 180 / Math.PI).toFixed(2),
+          surfaceYaw: (surfaceYaw * 180 / Math.PI).toFixed(2),
+          sunHorizLenSq: (window._debugSunHorizLenSq || 0).toFixed(6),
+          frameCount: window._frameCount || 0,
+          visualMeshType: typeof visualMesh,
+          mivExists: !!miv,
+          cameraMode
+        }));
+      }
     }
 
     function updateSurfaceCamera() {
@@ -1703,6 +1770,7 @@
 
     function animate(now) {
       requestAnimationFrame(animate);
+      window._frameCount = (window._frameCount || 0) + 1;
 
       if (playing) {
         const dt = Math.min((now - lastFrame) / 1000, 2.0); // cap at 2s to prevent jumps
@@ -1790,7 +1858,7 @@
 
       updateDebugOverlay();
       // Expose debug state for Playwright tests
-      window.__dbg = { debugSunAlt, debugSunAltCenter, debugSunAzimuth, debugDayFraction, debugCamAlt, debugCamSunAlt, simDayOffset, surfaceYaw, surfacePitch, surfaceAutoTrack, playing, spriteOnScreen, spriteScreenX, spriteScreenY, spriteScreenZ, cameraMode, sunMeshVisible: sunMesh.visible, sunSpriteVisible: surfaceSunSprite ? surfaceSunSprite.visible : null };
+      window.__dbg = { debugSunAlt, debugSunAltCenter, debugSunAzimuth, debugDayFraction, debugCamAlt, debugCamSunAlt, simDayOffset, surfaceYaw, surfacePitch, surfaceAutoTrack, playing, spriteOnScreen, spriteScreenX, spriteScreenY, spriteScreenZ, cameraMode, sunMeshVisible: sunMesh.visible, sunSpriteVisible: surfaceSunSprite ? surfaceSunSprite.visible : null, frameCount: window._frameCount || 0 };
     window.__setSimDayOffset = (v) => { simDayOffset = v; updateBodies(); updateUI(); };
     window.__setAutoTrack = (v) => { surfaceAutoTrack = v; };
       composer.render();
