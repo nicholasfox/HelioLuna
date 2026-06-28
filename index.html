@@ -833,9 +833,9 @@
       moonOrbitGeo.setFromPoints(moonPts);
       moonOrbitLine.position.copy(earthMesh.position);
 
-      // Show Moon orbit only when camera is close enough
+      // Show Moon orbit only when camera is close enough and not in confirmed surface mode
       const camDist = camera.position.length();
-      moonOrbitLine.visible = camDist < 40;
+      moonOrbitLine.visible = camDist < 40 && !surfaceConfirmed;
 
       // Subsolar point: Sun direction in Earth's local frame
       const sunDir = sunMesh.position.clone().sub(earthMesh.position).normalize();
@@ -1161,6 +1161,9 @@
 
       // Restore starfield visibility when leaving surface mode
       starfield.visible = true;
+      earthOrbitLine.visible = true;
+      moonOrbitLine.visible = true;
+      earthAxis.visible = true;
 
       // Restore default visibility for all surface‑related objects
       earthMesh.visible = true;
@@ -1520,6 +1523,9 @@
       targetMesh.visible = false;
       visualMesh.visible = true;
       sunMesh.visible = false;
+      earthOrbitLine.visible = false;
+      moonOrbitLine.visible = false;
+      earthAxis.visible = false;
       sunLight.visible = false;
       surfaceDirLight.visible = true;
       for (const obj of surfaceHiddenLabels) obj.visible = false;
