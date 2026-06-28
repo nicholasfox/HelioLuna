@@ -42,7 +42,7 @@
       color:rgba(255,255,255,0.5);font-size:12px;user-select:text;
     }
     #focus-btns{
-      position:fixed;top:12px;right:16px;z-index:100;display:flex;gap:6px;
+      position:fixed;top:12px;right:16px;z-index:100;display:flex;flex-wrap:wrap;gap:6px;max-width:220px;
     }
     #focus-btns button{
       background:rgba(255,255,255,0.08);color:#ccc;border:1px solid rgba(255,255,255,0.15);
@@ -51,7 +51,7 @@
     }
     #focus-btns button:hover{background:rgba(255,255,255,0.2);color:#fff}
     #plane-toggle{
-      position:fixed;top:52px;right:16px;z-index:100;display:flex;flex-direction:column;gap:6px;
+      position:fixed;top:160px;right:16px;z-index:100;display:flex;flex-direction:column;gap:6px;
     }
     #plane-toggle label{
       display:flex;align-items:center;gap:6px;color:#aaa;font-size:12px;cursor:pointer;
@@ -220,10 +220,19 @@
     <button id="focusSun">太阳</button>
     <button id="focusEarth">地球</button>
     <button id="focusMoon">月球</button>
+    <button id="focus-mercury">水星</button>
+    <button id="focus-venus">金星</button>
+    <button id="focus-mars">火星</button>
+    <button id="focus-jupiter">木星</button>
+    <button id="focus-saturn">土星</button>
+    <button id="focus-uranus">天王星</button>
+    <button id="focus-neptune">海王星</button>
   </div>
   <div id="plane-toggle">
     <label><input type="checkbox" id="chkEcliptic"> 黄道面</label>
     <label><input type="checkbox" id="chkEquator"> 赤道面</label>
+    <label><input type="checkbox" id="chkPlanetOrbits" checked> 行星轨道</label>
+    <label><input type="checkbox" id="chkSeasonMarkers" checked> 节气标志</label>
   </div>
   <div id="season-btns">
     <button id="btnSpring">春分</button>
@@ -235,8 +244,8 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      "three": "./three_modules/three/three.module.js",
+      "three/addons/": "./three_modules/three/addons/"
     }
   }
   </script>
@@ -283,6 +292,17 @@
     const REAL_MOON_DIST = 60.3;     // Earth–Moon distance in Earth radii
     const REAL_SUN_DIST = 23480;     // Earth–Sun distance in Earth radii
     const REAL_SUN_ANGULAR = 0.04625; // Sun angular size 2.65° in radians (5× real)
+
+    // ── Planet visual config (not to scale, purely for visual demonstration) ──
+    const PLANET_CONFIGS = [
+      { key: 'Mercury', label: '水星', radius: 0.12, color: 0xb5b5b5, tex: 'mercury.jpg' },
+      { key: 'Venus',   label: '金星', radius: 0.25, color: 0xe8cda0, tex: 'venus.jpg' },
+      { key: 'Mars',    label: '火星', radius: 0.22, color: 0xc1440e, tex: 'mars.jpg' },
+      { key: 'Jupiter', label: '木星', radius: 1.50, color: 0xd4a574, tex: 'jupiter.jpg' },
+      { key: 'Saturn',  label: '土星', radius: 1.20, color: 0xead6b8, tex: 'saturn.jpg' },
+      { key: 'Uranus',  label: '天王星', radius: 0.80, color: 0xd1e7e7, tex: 'uranus.jpg' },
+      { key: 'Neptune', label: '海王星', radius: 0.70, color: 0x5b5ddf, tex: 'neptune.jpg' },
+    ];
 
     // ============================================================
     // Renderer
@@ -467,6 +487,40 @@
     }
     rebuildOrbitLine();
 
+    // ── Planet orbit lines ──
+    let planetData = [];
+    function rebuildPlanetOrbitLines() {
+      for (const pd of planetData) {
+        if (pd.orbitLine) {
+          if (pd.orbitLine.parent) pd.orbitLine.parent.remove(pd.orbitLine);
+          pd.orbitLine.geometry.dispose();
+          pd.orbitLine.material.dispose();
+        }
+      }
+      const cosObl = Math.cos(EARTH_TILT);
+      const sinObl = Math.sin(EARTH_TILT);
+      for (const pd of planetData) {
+        const geo = new THREE.BufferGeometry();
+        const mat = new THREE.LineBasicMaterial({ color: pd.config.color, transparent: true, opacity: 0.25, depthTest: true });
+        pd.orbitLine = new THREE.Line(geo, mat);
+        scene.add(pd.orbitLine);
+        pd.orbitLine.visible = document.getElementById('chkPlanetOrbits').checked;
+        const period = Astronomy.PlanetOrbitalPeriod(Astronomy.Body[pd.config.key]);
+        const steps = Math.min(360, Math.max(60, Math.round(period)));
+        const pts = [];
+        for (let i = 0; i <= steps; i++) {
+          const d = (i / steps) * period;
+          const t = new Astronomy.AstroTime(new Date(YEAR_START.getTime() + d * DAY_MS));
+          const v = Astronomy.HelioVector(Astronomy.Body[pd.config.key], t);
+          const eX = v.x;
+          const eY = v.y * cosObl + v.z * sinObl;
+          const eZ = -v.y * sinObl + v.z * cosObl;
+          pts.push(new THREE.Vector3(eX * EARTH_SCALE, eZ * EARTH_SCALE, eY * EARTH_SCALE));
+        }
+        geo.setFromPoints(pts);
+      }
+    }
+
     // ============================================================
     // Earth rotation axis (23.44° tilt) — scene-level, synced to Earth
     // ============================================================
@@ -538,7 +592,7 @@
       new THREE.Vector3(0, -moonAxisLen, 0),
       new THREE.Vector3(0,  moonAxisLen, 0)
     ]);
-    const moonAxis = new THREE.Line(moonAxisGeo,
+    let moonAxis = new THREE.Line(moonAxisGeo,
       new THREE.LineBasicMaterial({ color: 0xaabb66, transparent: true, opacity: 0.5, depthTest: true })
     );
     moonMesh.add(moonAxis);
@@ -595,6 +649,25 @@
       undefined,
       (e) => { console.warn('Real Moon texture failed:', e); }
     );
+
+    // ── Planet meshes ──
+    for (const cfg of PLANET_CONFIGS) {
+      const geo = new THREE.SphereGeometry(cfg.radius, 32, 32);
+      const mat = new THREE.MeshLambertMaterial();
+      const mesh = new THREE.Mesh(geo, mat);
+      scene.add(mesh);
+      texLoader.load(cfg.tex, (tex) => { mat.map = tex; mat.needsUpdate = true; }, undefined, (e) => console.warn(cfg.label + ' texture failed:', e));
+      let ringMesh = null;
+      if (cfg.key === 'Saturn') {
+        const rGeo = new THREE.RingGeometry(cfg.radius * 1.4, cfg.radius * 2.3, 64);
+        const rMat = new THREE.MeshBasicMaterial({ color: 0xc8b89a, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+        ringMesh = new THREE.Mesh(rGeo, rMat);
+        ringMesh.rotation.x = -Math.PI / 2 + 26.7 * Math.PI / 180;
+        mesh.add(ringMesh);
+      }
+      planetData.push({ config: cfg, mesh, orbitLine: null, orbitGeo: null });
+    }
+    rebuildPlanetOrbitLines();
 
     // ============================================================
     // Starfield — random sphere distribution (enhanced)
@@ -694,6 +767,9 @@
         sprite.position.y = 0.9;
         sprite.scale.set(1.2, 0.6, 1);
         scene.add(sprite);
+        const smVis = document.getElementById('chkSeasonMarkers').checked;
+        cone.visible = smVis;
+        sprite.visible = smVis;
         seasonMarkers.push({ cone, sprite });
       }
     }
@@ -873,6 +949,15 @@
       surfaceDirLight.position.copy(lightBodyPos.clone().negate().multiplyScalar(500));
       surfaceDirTarget.position.copy(lightTarget);
 
+      // Planet positions
+      for (const pd of planetData) {
+        const pv = Astronomy.HelioVector(Astronomy.Body[pd.config.key], at);
+        const pX = pv.x;
+        const pY = pv.y * cosObl + pv.z * sinObl;
+        const pZ = -pv.y * sinObl + pv.z * cosObl;
+        pd.mesh.position.set(pX * EARTH_SCALE, pZ * EARTH_SCALE, pY * EARTH_SCALE);
+      }
+
     }
 
     // ============================================================
@@ -972,6 +1057,7 @@
       playing = false;
       playBtn.textContent = '▶';
       rebuildOrbitLine();
+      rebuildPlanetOrbitLines();
       rebuildSeasonMarkers();
       jumpDate.value = beijingDateStr(YEAR_START);
       updateBodies();
@@ -1180,8 +1266,14 @@
       for (const obj of surfaceHiddenLabels) obj.visible = true;
       equatorPlane.visible = document.getElementById('chkEquator').checked;
       for (const { cone, sprite } of seasonMarkers) {
-        cone.visible = true;
-        sprite.visible = true;
+        const vis = document.getElementById('chkSeasonMarkers').checked;
+        cone.visible = vis;
+        sprite.visible = vis;
+      }
+      // Restore planet visibility when leaving surface mode
+      for (const pd of planetData) {
+        pd.mesh.visible = true;
+        if (pd.orbitLine) pd.orbitLine.visible = document.getElementById('chkPlanetOrbits').checked;
       }
 
       document.querySelectorAll('#camera-mode button').forEach(b => b.classList.remove('active'));
@@ -1226,6 +1318,13 @@
       } else if (mode === 'earthSurface' || mode === 'moonSurface') {
         surfaceBody = mode === 'earthSurface' ? 'earth' : 'moon';
         surfaceConfirmed = false;
+        earthOrbitLine.visible = false;
+        moonOrbitLine.visible = false;
+        earthAxis.visible = false;
+        if (moonAxis) moonAxis.visible = false;
+        for (const pd of planetData) {
+          if (pd.orbitLine) pd.orbitLine.visible = false;
+        }
         controls.enabled = true;
         // Remove old flag
         if (surfaceFlag) { surfaceFlag.parent.remove(surfaceFlag); surfaceFlag = null; }
@@ -1256,6 +1355,11 @@
     document.getElementById('focusMoon').addEventListener('click', () => {
       focusOn(moonMesh.position, MOON_R);
     });
+    for (const pd of planetData) {
+      document.getElementById('focus-' + pd.config.key.toLowerCase()).addEventListener('click', () => {
+        focusOn(pd.mesh.position, Math.max(pd.config.radius, 0.5));
+      });
+    }
 
     // Plane toggle checkboxes
     document.getElementById('chkEcliptic').addEventListener('change', (e) => {
@@ -1263,6 +1367,17 @@
     });
     document.getElementById('chkEquator').addEventListener('change', (e) => {
       equatorPlane.visible = e.target.checked;
+    });
+    document.getElementById('chkPlanetOrbits').addEventListener('change', (e) => {
+      for (const pd of planetData) {
+        if (pd.orbitLine) pd.orbitLine.visible = e.target.checked;
+      }
+    });
+    document.getElementById('chkSeasonMarkers').addEventListener('change', (e) => {
+      for (const { cone, sprite } of seasonMarkers) {
+        cone.visible = e.target.checked;
+        sprite.visible = e.target.checked;
+      }
     });
 
     // ============================================================
@@ -1525,6 +1640,7 @@
       sunMesh.visible = false;
       earthOrbitLine.visible = false;
       moonOrbitLine.visible = false;
+      for (const pd of planetData) { pd.mesh.visible = false; if (pd.orbitLine) pd.orbitLine.visible = false; }
       earthAxis.visible = false;
       sunLight.visible = false;
       surfaceDirLight.visible = true;

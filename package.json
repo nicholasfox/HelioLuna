@@ -1,10 +1,57 @@
 {
-  "name": "eclipses",
+  "name": "helio-luna",
+  "productName": "HelioLuna",
+  "version": "1.1.0",
+  "description": "日月食教育演示 — 交互式太阳系3D天文模拟器",
+  "main": "main.js",
   "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win portable",
+    "dist:linux": "electron-builder --linux",
+    "dist:mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.helio-luna.app",
+    "productName": "HelioLuna",
+    "files": [
+      "main.js",
+      "index.html",
+      "astronomy.browser.min.js",
+      "earth_atmos_2048.jpg",
+      "moon_1024.jpg",
+      "mercury.jpg",
+      "venus.jpg",
+      "mars.jpg",
+      "jupiter.jpg",
+      "saturn.jpg",
+      "saturn_ring.png",
+      "uranus.jpg",
+      "neptune.jpg",
+      "three_modules/**",
+      "screenshots/**"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "screenshots/Earth.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "screenshots/Earth.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "screenshots/Earth.png"
+    }
+  },
   "dependencies": {
     "playwright": "^1.61.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.0"
+    "@playwright/test": "^1.61.0",
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3"
   }
 }

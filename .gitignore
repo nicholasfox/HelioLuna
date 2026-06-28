@@ -1,5 +1,8 @@
 node_modules/
 test-results/
+surface-horizon-test.png
+dist/
+release/
 test_minimal.html
 test_sun_node.cjs
 test_sunrise.py

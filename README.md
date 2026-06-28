@@ -2,7 +2,7 @@
 
 [![三体天文模拟器](screenshots/Earth.png)](screenshots/Earth.png)
 
-基于 Three.js + [Astronomy Engine](https://github.com/cosinekitty/astronomy) 的交互式 3D 天文可视化。在地球上仰望太阳轨迹，在月球上回望蓝色母星，在太空中观察日地月系统的精密运动。
+基于 Three.js + [Astronomy Engine](https://github.com/cosinekitty/astronomy) 的交互式 3D 天文可视化。在地球上仰望太阳轨迹，在月球上回望蓝色母星，在太空中观察包含七大行星的太阳系精密运动。
 
 ## 截图
 
@@ -25,6 +25,14 @@
 - **月心（月球）** — 以月球为中心，观察地球
 - **地表（地球）** — 站在地球表面任意位置仰望天空
 - **月表（月球）** — 站在月球表面仰望星空
+
+### 太阳系七大行星
+
+- 水星、金星、火星、木星、土星、天王星、海王星完整呈现
+- 基于真实星历（VSOP87）计算实时位置
+- 土星带有半透明光环
+- 独立显示开关控制行星轨道线
+- 右上角聚焦按钮快速定位各行星
 
 ### 时间系统
 
@@ -64,6 +72,12 @@
 - 四季标记：轨道上显示春分/夏至/秋分/冬至锥体标签
 - 行星光照方向随观测位置自动调整
 
+### 界面控制
+
+- **右上角聚焦按钮**：太阳 / 地球 / 月球 / 水星 / 金星 / 火星 / 木星 / 土星 / 天王星 / 海王星，一键定位
+- **显示开关**：黄道面 / 赤道面 / 行星轨道 / 节气标志，独立控制可见性
+- 地表/月表模式下自动隐藏所有轨道线和自转轴
+
 ### 调试面板
 
 - 显示北京时间的当前日期时间
@@ -73,9 +87,19 @@
 - 自动跟踪模式状态
 - 太阳/目标天体屏幕投影坐标
 
-## 快速开始
+## 下载可执行文件
 
-项目为纯前端应用，无需构建或安装依赖，直接启动静态服务器即可：
+从 [Releases](https://github.com/nicholasfox/HelioLuna/releases) 页面下载对应平台的便携版，解压后双击即可运行，无需安装任何依赖。
+
+| 平台 | 文件 |
+|------|------|
+| Windows | `HelioLuna-win-x64.exe` |
+| Linux | `HelioLuna-linux-x86_64.AppImage` |
+| macOS | `HelioLuna-mac-x64.dmg` |
+
+## 本地开发
+
+项目为纯前端应用，无需构建，直接启动静态服务器即可：
 
 ```bash
 python3 -m http.server 8080
@@ -124,7 +148,8 @@ python3 -m http.server 8080
 | [Three.js](https://threejs.org/) | 3D 渲染引擎（本地库，无 CDN 依赖） |
 | [Astronomy Engine](https://github.com/cosinekitty/astronomy) | 高精度星历计算（VSOP87 + NOVAS，精度 ±1′） |
 | JavaScript (ES6) | 全部逻辑在单页面内实现 |
-| playwright | E2E 测试（15 个测试用例覆盖全部核心功能） |
+| [Electron](https://www.electronjs.org/) | 跨平台桌面打包 |
+| [playwright](https://playwright.dev/) | E2E 测试（15 个测试用例覆盖全部核心功能） |
 
 ## 说明
 
