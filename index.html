@@ -92,6 +92,15 @@
       transition:all .15s;
     }
     #confirm-btn:hover{background:rgba(74,158,255,0.5);color:#fff}
+    #preset-selector{
+      position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:99;
+      display:none;
+    }
+    #preset-selector select{
+      background:rgba(8,8,16,0.85);color:#8cf;border:1px solid rgba(255,255,255,0.15);
+      border-radius:4px;padding:3px 8px;font-size:11px;font-family:monospace;cursor:pointer;
+    }
+    #preset-selector select:hover{border-color:#4a9eff}
     #surface-compass{
       position:fixed;bottom:150px;left:50%;transform:translateX(-50%);z-index:101;
       width:80px;height:80px;border-radius:50%;
@@ -170,6 +179,10 @@
     <button id="modeSeleno" title="月心天球坐标系">月心</button>
     <button id="modeEarthSurf" title="地球表面选点">地表</button>
     <button id="modeMoonSurf" title="月球表面选点">月表</button>
+  </div>
+  <div id="preset-selector">
+    <select id="preset-earth" style="display:none"><option value="">— 选择城市 —</option></select>
+    <select id="preset-moon" style="display:none"><option value="">— 选择月面坐标 —</option></select>
   </div>
   <div id="select-hint">点击天体表面选点</div>
   <div id="coord-display"></div>
@@ -1145,7 +1158,7 @@
         controls.target.set(0, 0, 0);
         cameraOffset.copy(camera.position).sub(controls.target);
         controls.update();
-        selectHint.style.display = 'none';
+        document.getElementById('preset-selector').style.display = 'none';
       } else if (mode === 'geocentric') {
         controls.enabled = true;
         camera.zoom = 1;
@@ -1179,6 +1192,10 @@
         prevTarget.copy(mesh.position);
         selectHint.style.display = 'block';
         confirmBtn.style.display = 'none';
+        // Show preset selector
+        document.getElementById('preset-selector').style.display = 'block';
+        document.getElementById('preset-earth').style.display = mode === 'earthSurface' ? '' : 'none';
+        document.getElementById('preset-moon').style.display = mode === 'moonSurface' ? '' : 'none';
       }
     }
 
@@ -1273,6 +1290,99 @@
       confirmBtn.style.display = 'block';
       selectHint.style.display = 'none';
     };
+
+    // ============================================================
+    // Surface point presets
+    // ============================================================
+    const EARTH_PRESETS = [
+      { name:'北京', lat:39.9, lon:116.4 },
+      { name:'上海', lat:31.2, lon:121.5 },
+      { name:'东京', lat:35.7, lon:139.7 },
+      { name:'首尔', lat:37.6, lon:127.0 },
+      { name:'新加坡', lat:1.3, lon:103.8 },
+      { name:'迪拜', lat:25.2, lon:55.3 },
+      { name:'莫斯科', lat:55.8, lon:37.6 },
+      { name:'伦敦', lat:51.5, lon:-0.1 },
+      { name:'巴黎', lat:48.9, lon:2.3 },
+      { name:'开罗', lat:30.0, lon:31.2 },
+      { name:'拉萨', lat:29.7, lon:91.1 },
+      { name:'悉尼', lat:-33.9, lon:151.2 },
+      { name:'好望角', lat:-34.0, lon:18.5 },
+      { name:'旧金山', lat:37.8, lon:-122.4 },
+      { name:'纽约', lat:40.7, lon:-74.0 },
+      { name:'里约', lat:-22.9, lon:-43.2 },
+      { name:'南极点', lat:-90.0, lon:0 },
+      { name:'北极点', lat:90.0, lon:0 },
+    ];
+    const MOON_PRESETS = [
+      { name:'阿波罗11号（静海）', lat:0.7, lon:23.5 },
+      { name:'阿波罗12号（风暴洋）', lat:-3.0, lon:-23.4 },
+      { name:'阿波罗14号（弗拉·毛罗）', lat:-3.6, lon:-17.5 },
+      { name:'阿波罗15号（雨海）', lat:26.1, lon:3.6 },
+      { name:'阿波罗16号（笛卡尔高地）', lat:-9.0, lon:15.5 },
+      { name:'阿波罗17号（陶拉斯-利特罗）', lat:20.2, lon:30.8 },
+      { name:'嫦娥四号（冯·卡门）', lat:-45.5, lon:177.6 },
+      { name:'嫦娥五号（风暴洋）', lat:43.1, lon:-51.8 },
+      { name:'第谷环形山', lat:-43.3, lon:-11.1 },
+      { name:'哥白尼环形山', lat:9.6, lon:-20.1 },
+      { name:'开普勒环形山', lat:8.1, lon:-38.0 },
+      { name:'静海', lat:0.7, lon:23.5 },
+      { name:'风暴洋', lat:18.4, lon:-57.4 },
+      { name:'雨海', lat:38.9, lon:-17.0 },
+    ];
+
+    // Populate preset dropdowns
+    function populatePresets() {
+      const earthSel = document.getElementById('preset-earth');
+      EARTH_PRESETS.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.lat + ',' + p.lon;
+        opt.textContent = p.name;
+        earthSel.appendChild(opt);
+      });
+      const moonSel = document.getElementById('preset-moon');
+      MOON_PRESETS.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.lat + ',' + p.lon;
+        opt.textContent = p.name;
+        moonSel.appendChild(opt);
+      });
+    }
+    populatePresets();
+
+    function selectPreset(latDeg, lonDeg) {
+      if (cameraMode !== 'earthSurface' && cameraMode !== 'moonSurface') return;
+      surfaceLat = latDeg * Math.PI / 180;
+      surfaceLon = lonDeg * Math.PI / 180;
+      const targetMesh = surfaceBody === 'earth' ? earthMesh : moonMesh;
+      const R = surfaceBody === 'earth' ? EARTH_R : MOON_R;
+      if (surfaceFlag) surfaceFlag.parent.remove(surfaceFlag);
+      const flagColor = surfaceBody === 'earth' ? 0x44ff88 : 0xffaa44;
+      surfaceFlag = createFlag(flagColor);
+      const cLat = Math.cos(surfaceLat);
+      const flagPos = new THREE.Vector3(
+        R * Math.cos(surfaceLon) * cLat,
+        R * Math.sin(surfaceLat),
+        -R * Math.sin(surfaceLon) * cLat
+      );
+      surfaceFlag.position.copy(flagPos);
+      surfaceFlag.lookAt(flagPos.clone().multiplyScalar(2));
+      targetMesh.add(surfaceFlag);
+      confirmBtn.style.display = 'block';
+      selectHint.style.display = 'none';
+    }
+
+    // Preset dropdown change handlers
+    document.getElementById('preset-earth').addEventListener('change', function() {
+      if (!this.value) return;
+      const parts = this.value.split(',');
+      if (parts.length === 2) selectPreset(parseFloat(parts[0]), parseFloat(parts[1]));
+    });
+    document.getElementById('preset-moon').addEventListener('change', function() {
+      if (!this.value) return;
+      const parts = this.value.split(',');
+      if (parts.length === 2) selectPreset(parseFloat(parts[0]), parseFloat(parts[1]));
+    });
 
     // Mouse drag for viewing direction in surface mode
     renderer.domElement.addEventListener('pointerdown', (e) => {
