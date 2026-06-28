@@ -1645,19 +1645,41 @@
       if (east.lengthSq() < 0.001) east.set(0, 0, 1).cross(up).normalize();
       const north = new THREE.Vector3().crossVectors(up, east).normalize();
 
+      // Observer position and world normal (needed before auto-track)
+      const EYE_HEIGHT = Math.max(VISUAL_R * 1.57e-5, camera.near * 1.5);
+      const camWorld = visualMesh.localToWorld(surfLocal.clone().add(normal.clone().multiplyScalar(EYE_HEIGHT)));
+      const observerPos = camWorld;
+      const worldNormal = normal.clone().applyQuaternion(visualMesh.quaternion).normalize();
+
+      // Sun and target body directions (needed before auto-track)
+      const sunDir = new THREE.Vector3().subVectors(sunMesh.position, observerPos).normalize();
+      const sunAlt = Math.asin(Math.max(-1, Math.min(1, sunDir.dot(worldNormal))));
+      const targetBodyMesh = isEarth ? surfaceMoonRealMesh : surfaceEarthMesh;
+      const targetBodyDir = new THREE.Vector3().subVectors(targetBodyMesh.position, observerPos).normalize();
+      const targetBodyAlt = Math.asin(Math.max(-1, Math.min(1, targetBodyDir.dot(worldNormal))));
+
+      // Auto-track — runs BEFORE camera setup so current-frame yaw/pitch take effect immediately
+      if (surfaceAutoTrack !== 'off') {
+        const trackDir = surfaceAutoTrack === 'sun' ? sunDir : targetBodyDir;
+        const trackAlt = surfaceAutoTrack === 'sun' ? sunAlt : targetBodyAlt;
+        surfacePitch = Math.max(0.0, Math.min(Math.PI / 2 - 0.01, trackAlt));
+        const trackHoriz = trackDir.clone().sub(worldNormal.clone().multiplyScalar(trackDir.dot(worldNormal))).normalize();
+        if (trackHoriz.lengthSq() > 0.001) {
+          const worldNorth = north.clone().applyQuaternion(visualMesh.quaternion).normalize();
+          const northHoriz = worldNorth.clone().sub(worldNormal.clone().multiplyScalar(worldNorth.dot(worldNormal))).normalize();
+          const rightHoriz = new THREE.Vector3().crossVectors(northHoriz, worldNormal).normalize();
+          const yawToTarget = Math.atan2(trackHoriz.dot(rightHoriz), trackHoriz.dot(northHoriz));
+          surfaceYaw = -yawToTarget;
+        }
+      }
+
+      // Camera look direction using current frame's yaw/pitch
       let lookDir = north.clone();
       lookDir.applyAxisAngle(up, surfaceYaw);
       const right = new THREE.Vector3().crossVectors(lookDir, up).normalize();
       lookDir.applyAxisAngle(right, surfacePitch);
 
-      const EYE_HEIGHT = Math.max(VISUAL_R * 1.57e-5, camera.near * 1.5);
-      const camWorld = visualMesh.localToWorld(surfLocal.clone().add(normal.clone().multiplyScalar(EYE_HEIGHT)));
-
-      const observerPos = camWorld;
-
-      const lookWorld = visualMesh.localToWorld(surfLocal.clone().add(lookDir.multiplyScalar(200)));
-
-      const worldNormal = normal.clone().applyQuaternion(visualMesh.quaternion).normalize();
+      const lookWorld = visualMesh.localToWorld(surfLocal.clone().add(lookDir.clone().multiplyScalar(200)));
       const forward = lookDir.clone().applyQuaternion(visualMesh.quaternion).normalize();
       const camRight = new THREE.Vector3().crossVectors(forward, worldNormal).normalize();
       if (camRight.lengthSq() < 0.001) {
@@ -1672,13 +1694,9 @@
       const camDir = camera.getWorldDirection(new THREE.Vector3());
       debugCamAlt = Math.asin(Math.max(-1, Math.min(1, camDir.dot(worldNormal))));
 
-      // Sun direction from observer position
-      const sunDir = new THREE.Vector3().subVectors(sunMesh.position, observerPos).normalize();
-      const sunAlt = Math.asin(Math.max(-1, Math.min(1, sunDir.dot(worldNormal))));
+      // Sun sprite in world space (child of scene, not visualMesh)
       const sunDirFromCamera = new THREE.Vector3().subVectors(sunMesh.position, camWorld).normalize();
       debugCamSunAlt = Math.asin(Math.max(-1, Math.min(1, sunDirFromCamera.dot(worldNormal))));
-
-      // Sun sprite in world space (child of scene, not visualMesh)
       if (surfaceSunSprite && surfaceSunSprite.parent) {
         const fwd = surfaceAutoTrack === 'sun'
           ? camera.getWorldDirection(new THREE.Vector3())
@@ -1711,26 +1729,6 @@
       const hitSphere = new THREE.Sphere(targetCenter, targetR);
       debugSunRayHit = sunRay.intersectSphere(hitSphere, hitPt) !== null;
       debugSunRayDist = debugSunRayHit ? rayOrigin.distanceTo(hitPt) : 0;
-
-      // Secondary body direction — use real-scale sky meshes, not orbital meshes
-      const targetBodyMesh = isEarth ? surfaceMoonRealMesh : surfaceEarthMesh;
-      const targetBodyDir = new THREE.Vector3().subVectors(targetBodyMesh.position, observerPos).normalize();
-      const targetBodyAlt = Math.asin(Math.max(-1, Math.min(1, targetBodyDir.dot(worldNormal))));
-
-      // Auto-track (absolute yaw in world space)
-      if (surfaceAutoTrack !== 'off') {
-        const trackDir = surfaceAutoTrack === 'sun' ? sunDir : targetBodyDir;
-        const trackAlt = surfaceAutoTrack === 'sun' ? sunAlt : targetBodyAlt;
-        surfacePitch = Math.max(0.0, Math.min(Math.PI / 2 - 0.01, trackAlt));
-        const trackHoriz = trackDir.clone().sub(worldNormal.clone().multiplyScalar(trackDir.dot(worldNormal))).normalize();
-        if (trackHoriz.lengthSq() > 0.001) {
-          const worldNorth = north.clone().applyQuaternion(visualMesh.quaternion).normalize();
-          const northHoriz = worldNorth.clone().sub(worldNormal.clone().multiplyScalar(worldNorth.dot(worldNormal))).normalize();
-          const rightHoriz = new THREE.Vector3().crossVectors(northHoriz, worldNormal).normalize();
-          const yawToTarget = Math.atan2(trackHoriz.dot(rightHoriz), trackHoriz.dot(northHoriz));
-          surfaceYaw = -yawToTarget;
-        }
-      }
 
       // Debug values
       debugSunAlt = sunAlt;
