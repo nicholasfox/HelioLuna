@@ -365,10 +365,10 @@
     const earthMat = new THREE.MeshLambertMaterial();
     const earthMesh = new THREE.Mesh(earthGeo, earthMat);
     const EARTH_TILT = 23.44 * Math.PI / 180;
-    // Subsolar longitude at YEAR_START (2025-03-20 09:01 UTC) = (12 - 9.0167) × 15° = 44.75°E
-    const SUBSOLAR_LON_OFFSET = 44.75 * Math.PI / 180;
-    earthMesh.rotation.order = 'XZY';
-    earthMesh.rotation.x = EARTH_TILT;
+    // Quaternion-based rotation: tilt around X then rotate around the TILTED Y axis.
+    // This keeps the Earth's rotation axis FIXED in space (no wobble).
+    const TILT_QUAT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), EARTH_TILT);
+    const TILTED_Y = new THREE.Vector3(0, 1, 0).applyQuaternion(TILT_QUAT);
     scene.add(earthMesh);
 
     // Latitude lines on Earth surface (equator, tropics)
@@ -691,9 +691,41 @@
         evEclY * EARTH_SCALE   // in-ecliptic → Z
       );
 
-      // Earth daily rotation (1 solar day = 360.986° = 2π × 1.0027379 rad)
-      // SUBSOLAR_LON_OFFSET aligns longitude 44.75°E with Sun at YEAR_START
-      earthMesh.rotation.y = SUBSOLAR_LON_OFFSET + simDayOffset * 2 * Math.PI * 1.002737909350795;
+      // Earth daily rotation — uses Astronomy library to compute a quaternion
+      // that aligns the subsolar point's local normal with the actual Sun
+      // direction.  This correctly handles all solar declinations (the old
+      // linear model was off by ~180° at solstices).
+      try {
+        const eq = Astronomy.Equator(Astronomy.Body.Sun, at, new Astronomy.Observer(0, 0, 0), true, true);
+        const decRad = eq.dec * Math.PI / 180;
+        const raDeg = eq.ra * 15;
+        const gstDeg = Astronomy.SiderealTime(at) * 15;
+        let ssLonDeg = raDeg - gstDeg;
+        if (ssLonDeg > 180) ssLonDeg -= 360;
+        else if (ssLonDeg < -180) ssLonDeg += 360;
+        const ssLonRad = ssLonDeg * Math.PI / 180;
+        const cDec = Math.cos(decRad);
+        const localNormal = new THREE.Vector3(
+          Math.cos(ssLonRad) * cDec, Math.sin(decRad), -Math.sin(ssLonRad) * cDec
+        ).applyQuaternion(TILT_QUAT);
+        const sunDir = earthMesh.position.clone().negate().normalize();
+        const projNormal = localNormal.clone().sub(
+          TILTED_Y.clone().multiplyScalar(localNormal.dot(TILTED_Y))
+        ).normalize();
+        const projSunDir = sunDir.clone().sub(
+          TILTED_Y.clone().multiplyScalar(sunDir.dot(TILTED_Y))
+        ).normalize();
+        const angle = Math.acos(Math.max(-1, Math.min(1, projNormal.dot(projSunDir))));
+        const cross = new THREE.Vector3().crossVectors(projNormal, projSunDir);
+        const sign = cross.dot(TILTED_Y) >= 0 ? 1 : -1;
+        const dailyQuat = new THREE.Quaternion().setFromAxisAngle(TILTED_Y, sign * angle);
+        earthMesh.quaternion.copy(dailyQuat.multiply(TILT_QUAT));
+      } catch (e) {
+        console.warn('Astronomy rotation failed, using linear fallback:', e);
+        const fallbackAngle = 313.7 * Math.PI / 180 - simDayOffset * 2 * Math.PI * 1.002737909350795;
+        const fbQuat = new THREE.Quaternion().setFromAxisAngle(TILTED_Y, fallbackAngle);
+        earthMesh.quaternion.copy(fbQuat.multiply(TILT_QUAT));
+      }
 
       // Sync Earth axis to Earth position
       earthAxis.position.copy(earthMesh.position);
@@ -835,11 +867,19 @@
       }
     }
 
+    function beijingDateStr(d) {
+      const bj = new Date(d.getTime() + 8 * 3600000);
+      return bj.toISOString().split('T')[0];
+    }
+    function beijingDateTimeStr(d) {
+      const bj = new Date(d.getTime() + 8 * 3600000);
+      return bj.toISOString().replace('T', ' ').substring(0, 19);
+    }
     function updateUIDate() {
       const d = new Date(YEAR_START.getTime() + simDayOffset * DAY_MS);
-      dateDispl.textContent = d.toISOString().split('T')[0];
+      dateDispl.textContent = beijingDateStr(d);
       timeline.value = simDayOffset;
-      jumpDate.value = d.toISOString().split('T')[0];
+      jumpDate.value = beijingDateStr(d);
     }
 
     function updateUI() {
@@ -864,7 +904,7 @@
 
     const jumpDate = document.getElementById('jumpDate');
     jumpDate.addEventListener('change', () => {
-      const d = new Date(jumpDate.value + 'T00:00:00');
+      const d = new Date(jumpDate.value + 'T00:00:00+08:00');
       if (isNaN(d.getTime())) return;
       const offset = (d.getTime() - YEAR_START.getTime()) / DAY_MS;
       simDayOffset = Math.max(0, Math.min(365, offset));
@@ -873,7 +913,7 @@
       updateBodies();
       updateUIDate();
     });
-    jumpDate.value = YEAR_START.toISOString().split('T')[0];
+    jumpDate.value = beijingDateStr(YEAR_START);
 
     // ============================================================
     // Event listeners
@@ -1172,16 +1212,17 @@
 
       const localPt = targetMesh.worldToLocal(hits[0].point.clone());
       surfaceLat = Math.asin(Math.min(1, Math.max(-1, localPt.y / R)));
-      surfaceLon = Math.atan2(localPt.x, localPt.z);
+      surfaceLon = Math.atan2(-localPt.z, localPt.x);
 
       // Place flag on surface
       if (surfaceFlag) surfaceFlag.parent.remove(surfaceFlag);
       const flagColor = surfaceBody === 'earth' ? 0x44ff88 : 0xffaa44;
       surfaceFlag = createFlag(flagColor);
+      const cLat = Math.cos(surfaceLat);
       const flagPos = new THREE.Vector3(
-        R * Math.cos(surfaceLat) * Math.sin(surfaceLon),
+        R * Math.cos(surfaceLon) * cLat,
         R * Math.sin(surfaceLat),
-        R * Math.cos(surfaceLat) * Math.cos(surfaceLon)
+        -R * Math.sin(surfaceLon) * cLat
       );
       surfaceFlag.position.copy(flagPos);
       // Orient flag to point outward from surface
@@ -1205,10 +1246,11 @@
       if (surfaceFlag) surfaceFlag.parent.remove(surfaceFlag);
       const flagColor = surfaceBody === 'earth' ? 0x44ff88 : 0xffaa44;
       surfaceFlag = createFlag(flagColor);
+      const cLat = Math.cos(surfaceLat);
       const flagPos = new THREE.Vector3(
-        R * Math.cos(surfaceLat) * Math.sin(surfaceLon),
+        R * Math.cos(surfaceLon) * cLat,
         R * Math.sin(surfaceLat),
-        R * Math.cos(surfaceLat) * Math.cos(surfaceLon)
+        -R * Math.sin(surfaceLon) * cLat
       );
       surfaceFlag.position.copy(flagPos);
       surfaceFlag.lookAt(flagPos.clone().multiplyScalar(2));
@@ -1340,15 +1382,16 @@
         surfaceMoonRealMesh.visible = true; // already on as visualMesh
       }
 
+      const cLat = Math.cos(surfaceLat);
       const surfLocal = new THREE.Vector3(
-        VISUAL_R * Math.cos(surfaceLat) * Math.sin(surfaceLon),
+        VISUAL_R * Math.cos(surfaceLon) * cLat,
         VISUAL_R * Math.sin(surfaceLat),
-        VISUAL_R * Math.cos(surfaceLat) * Math.cos(surfaceLon)
+        -VISUAL_R * Math.sin(surfaceLon) * cLat
       );
       const normal = surfLocal.clone().normalize();
       const up = normal.clone();
 
-      const east = new THREE.Vector3(0, 1, 0).cross(up).normalize();
+      const east = TILTED_Y.clone().cross(up).normalize();
       if (east.lengthSq() < 0.001) east.set(1, 0, 0).cross(up).normalize();
       const north = up.clone().cross(east).normalize();
 
@@ -1569,15 +1612,16 @@
       visualMesh.quaternion.copy(targetMesh.quaternion);
       visualMesh.updateMatrixWorld(true);
 
+      const cLat = Math.cos(surfaceLat);
       const surfLocal = new THREE.Vector3(
-        VISUAL_R * Math.cos(surfaceLat) * Math.sin(surfaceLon),
+        VISUAL_R * Math.cos(surfaceLon) * cLat,
         VISUAL_R * Math.sin(surfaceLat),
-        VISUAL_R * Math.cos(surfaceLat) * Math.cos(surfaceLon)
+        -VISUAL_R * Math.sin(surfaceLon) * cLat
       );
       const normal = surfLocal.clone().normalize();
       const up = normal.clone();
 
-      const east = new THREE.Vector3(0, 1, 0).cross(up).normalize();
+      const east = TILTED_Y.clone().cross(up).normalize();
       if (east.lengthSq() < 0.001) east.set(1, 0, 0).cross(up).normalize();
       const north = up.clone().cross(east).normalize();
 
@@ -1741,7 +1785,7 @@
       const yawDeg = (((surfaceYaw * 180 / Math.PI) % 360) + 360) % 360;
       const camAltDeg = (debugCamAlt * 180 / Math.PI).toFixed(1);
       const currentDate = new Date(YEAR_START.getTime() + simDayOffset * DAY_MS);
-      const dateStr = currentDate.toISOString().replace('T', ' ').substring(0, 19);
+      const dateStr = beijingDateTimeStr(currentDate);
       const latDeg = Math.abs(surfaceLat * 180 / Math.PI);
       const lonDeg = Math.abs(surfaceLon * 180 / Math.PI);
       const latDir = surfaceLat >= 0 ? 'N' : 'S';
