@@ -126,6 +126,10 @@ python3 -m http.server 8080
 | JavaScript (ES6) | 全部逻辑在单页面内实现 |
 | playwright | E2E 测试（15 个测试用例覆盖全部核心功能） |
 
+## 说明
+
+本项目及本文档通过 AI Agent（opencode + Claude）辅助完成。
+
 ## 许可
 
 MIT
