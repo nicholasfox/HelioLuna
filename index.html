@@ -531,17 +531,17 @@
     moonOrbitLine.visible = false;
 
     // ============================================================
-    // Moon rotation axis (~6.68° tilt to ecliptic normal) — scene-level
+    // Moon rotation axis (~6.68° tilt to ecliptic normal) — child of moonMesh
     // ============================================================
     const moonAxisLen = MOON_R * 3.5;
     const moonAxisGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, -moonAxisLen * Math.cos(MOON_TILT), -moonAxisLen * Math.sin(MOON_TILT)),
-      new THREE.Vector3(0,  moonAxisLen * Math.cos(MOON_TILT),  moonAxisLen * Math.sin(MOON_TILT))
+      new THREE.Vector3(0, -moonAxisLen, 0),
+      new THREE.Vector3(0,  moonAxisLen, 0)
     ]);
     const moonAxis = new THREE.Line(moonAxisGeo,
       new THREE.LineBasicMaterial({ color: 0xaabb66, transparent: true, opacity: 0.5, depthTest: true })
     );
-    scene.add(moonAxis);
+    moonMesh.add(moonAxis);
 
     texLoader.load(
       'moon_1024.jpg',
@@ -812,9 +812,6 @@
         moonMesh.quaternion.set(-moonMesh.quaternion.x, -moonMesh.quaternion.y, -moonMesh.quaternion.z, -moonMesh.quaternion.w);
       }
       _prevMoonQuat.copy(moonMesh.quaternion);
-
-      // Sync Moon axis to Moon position
-      moonAxis.position.copy(moonMesh.position);
 
       // Moon orbit follows Earth — sample 28 days of path
       const moonPts = [];
