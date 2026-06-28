@@ -130,6 +130,9 @@
     #debug-overlay .ok{color:#4a4}
     #debug-overlay .warn{color:#fa0}
     #debug-overlay .err{color:#f44}
+    #debug-overlay .tkbtn{background:rgba(255,255,255,0.08);color:#8cf;border:1px solid rgba(255,255,255,0.15);border-radius:3px;cursor:pointer}
+    #debug-overlay .tkbtn:hover{background:rgba(255,255,255,0.2)}
+    #debug-overlay .tkbtn.active{background:rgba(100,200,255,0.25);border-color:#8cf}
   </style>
 </head>
 <body>
@@ -181,10 +184,18 @@
   <div id="debug-overlay">
     <span class="label">坐标</span> <span id="dbg-coord"></span><br>
     <span class="label">日期</span> <span id="dbg-date"></span><br>
-    <span class="label">太阳高度</span> <span id="dbg-alt"></span><br>
-    <span class="label">相机实际俯仰</span> <span id="dbg-camalt"></span><br>
+    <span class="label">太阳高度</span> <span id="dbg-sun-alt"></span><br>
+    <span class="label">太阳方位</span> <span id="dbg-sun-az"></span><br>
+    <span class="label" id="dbg-target-alt-label">月亮高度</span> <span id="dbg-target-alt"></span><br>
+    <span class="label" id="dbg-target-az-label">月亮方位</span> <span id="dbg-target-az"></span><br>
+    <span class="label">相机俯仰</span> <span id="dbg-camalt"></span><br>
     <span class="label">相机偏航</span> <span id="dbg-yaw"></span><br>
     <span class="label">autoTrack</span> <span id="dbg-track"></span>
+    <div style="margin-top:3px">
+      <button id="track-off" class="tkbtn" style="font-size:10px;padding:1px 5px">关</button>
+      <button id="track-sun" class="tkbtn" style="font-size:10px;padding:1px 5px">日</button>
+      <button id="track-body" class="tkbtn" style="font-size:10px;padding:1px 5px">月</button>
+    </div>
   </div>
   <div id="focus-btns">
     <button id="focusSun">太阳</button>
@@ -972,7 +983,7 @@
     let surfaceSunSprite = null;
     let surfaceAtmoGlow = null;
     let surfaceSkyDome = null;
-    let surfaceAutoTrack = true;
+    let surfaceAutoTrack = 'sun';   // 'off' | 'sun' | 'body' (moon on earth, earth on moon)
     const _prevMoonQuat = new THREE.Quaternion();
     let isDragging = false, dragStartX = 0, dragStartY = 0;
     // Debug overlay values (updated each frame)
@@ -980,7 +991,9 @@
     let debugSunAzimuth = 0, debugYawDiff = 0, debugCamAlt = 0;
     let debugSunRayHit = false, debugSunRayDist = 0;
     let debugCamSunAlt = 0;
+    let debugTargetAlt = 0, debugTargetAz = 0;
     let spriteOnScreen = false, spriteScreenX = 0, spriteScreenY = 0, spriteScreenZ = 0;
+    let targetBodyOnScreen = false, targetBodyScreenX = 0, targetBodyScreenY = 0;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     const selectHint = document.getElementById('select-hint');
@@ -1276,18 +1289,23 @@
       surfaceYaw -= dx;   // horizontal drag → yaw
       surfacePitch -= dy; // vertical drag → pitch
       surfacePitch = Math.max(0.0, Math.min(Math.PI / 2 - 0.01, surfacePitch));
-      surfaceAutoTrack = false;
+      surfaceAutoTrack = 'off';
       dragStartX = e.clientX;
       dragStartY = e.clientY;
     });
     window.addEventListener('pointerup', () => { isDragging = false; });
 
-    // Keyboard shortcuts: R = re-enable autoTrack, D = dump debug state
+    // Track-mode buttons
+    ['track-off', 'track-sun', 'track-body'].forEach(id => {
+      document.getElementById(id).addEventListener('click', () => {
+        if (cameraMode !== 'earthSurface' && cameraMode !== 'moonSurface') return;
+        if (!surfaceConfirmed) return;
+        surfaceAutoTrack = ({ 'track-off': 'off', 'track-sun': 'sun', 'track-body': 'body' })[id];
+      });
+    });
+
+    // Keyboard shortcuts: D = dump debug state
     window.addEventListener('keydown', (e) => {
-      if ((e.key === 'r' || e.key === 'R') &&
-          (cameraMode === 'earthSurface' || cameraMode === 'moonSurface') && surfaceConfirmed) {
-        surfaceAutoTrack = true;
-      }
       if ((e.key === 'd' || e.key === 'D') &&
           (cameraMode === 'earthSurface' || cameraMode === 'moonSurface') && surfaceConfirmed) {
         const dbg = window.__dbg;
@@ -1391,9 +1409,10 @@
       const normal = surfLocal.clone().normalize();
       const up = normal.clone();
 
-      const east = TILTED_Y.clone().cross(up).normalize();
-      if (east.lengthSq() < 0.001) east.set(1, 0, 0).cross(up).normalize();
-      const north = up.clone().cross(east).normalize();
+      const locNorth = new THREE.Vector3(0, 1, 0);
+      const east = new THREE.Vector3().crossVectors(locNorth, up).normalize();
+      if (east.lengthSq() < 0.001) east.set(0, 0, 1).cross(up).normalize();
+      const north = new THREE.Vector3().crossVectors(up, east).normalize();
 
       // Observer = camera = visual sphere (no parallax in real scale)
       const surfCelestialLocal = surfLocal.clone().multiplyScalar(REAL_R / VISUAL_R);
@@ -1414,7 +1433,7 @@
 
       const sunAlt = Math.asin(Math.max(-1, Math.min(1, sunDir.dot(up))));
       surfacePitch = Math.max(0.0, Math.min(Math.PI / 2 - 0.01, sunAlt));
-      surfaceAutoTrack = true;
+      surfaceAutoTrack = 'sun';
 
       // Create horizon ring
       if (surfaceHorizonRing) {
@@ -1621,9 +1640,10 @@
       const normal = surfLocal.clone().normalize();
       const up = normal.clone();
 
-      const east = TILTED_Y.clone().cross(up).normalize();
-      if (east.lengthSq() < 0.001) east.set(1, 0, 0).cross(up).normalize();
-      const north = up.clone().cross(east).normalize();
+      const locNorth = new THREE.Vector3(0, 1, 0);
+      const east = new THREE.Vector3().crossVectors(locNorth, up).normalize();
+      if (east.lengthSq() < 0.001) east.set(0, 0, 1).cross(up).normalize();
+      const north = new THREE.Vector3().crossVectors(up, east).normalize();
 
       let lookDir = north.clone();
       lookDir.applyAxisAngle(up, surfaceYaw);
@@ -1660,7 +1680,7 @@
 
       // Sun sprite in world space (child of scene, not visualMesh)
       if (surfaceSunSprite && surfaceSunSprite.parent) {
-        const fwd = surfaceAutoTrack
+        const fwd = surfaceAutoTrack === 'sun'
           ? camera.getWorldDirection(new THREE.Vector3())
           : sunDirFromCamera.clone();
         const spriteWorld = camWorld.clone().add(fwd.multiplyScalar(REAL_SUN_DIST));
@@ -1692,37 +1712,44 @@
       debugSunRayHit = sunRay.intersectSphere(hitSphere, hitPt) !== null;
       debugSunRayDist = debugSunRayHit ? rayOrigin.distanceTo(hitPt) : 0;
 
-      // Auto-track
-      if (surfaceAutoTrack) {
-        surfacePitch = Math.max(0.0, Math.min(Math.PI / 2 - 0.01, sunAlt));
-        const sunLocalFrame = visualMesh.worldToLocal(sunMesh.position.clone()).sub(surfLocal).normalize();
-        const sunHorizLocal = sunLocalFrame.clone().sub(up.clone().multiplyScalar(sunLocalFrame.dot(up))).normalize();
-        window._debugSunHorizLenSq = sunHorizLocal.lengthSq();
-        if (sunHorizLocal.lengthSq() > 0.001) {
-          const yawToSun = Math.atan2(
-            up.dot(north.clone().cross(sunHorizLocal)),
-            north.dot(sunHorizLocal)
-          );
-          let diff = yawToSun - surfaceYaw;
-          const TAU = 2 * Math.PI;
-          diff = ((diff % TAU) + TAU) % TAU;
-          if (diff > Math.PI) diff -= TAU;
-          surfaceYaw += diff;
-          surfaceYaw = ((surfaceYaw % TAU) + TAU) % TAU;
+      // Secondary body direction — use real-scale sky meshes, not orbital meshes
+      const targetBodyMesh = isEarth ? surfaceMoonRealMesh : surfaceEarthMesh;
+      const targetBodyDir = new THREE.Vector3().subVectors(targetBodyMesh.position, observerPos).normalize();
+      const targetBodyAlt = Math.asin(Math.max(-1, Math.min(1, targetBodyDir.dot(worldNormal))));
+
+      // Auto-track (absolute yaw in world space)
+      if (surfaceAutoTrack !== 'off') {
+        const trackDir = surfaceAutoTrack === 'sun' ? sunDir : targetBodyDir;
+        const trackAlt = surfaceAutoTrack === 'sun' ? sunAlt : targetBodyAlt;
+        surfacePitch = Math.max(0.0, Math.min(Math.PI / 2 - 0.01, trackAlt));
+        const trackHoriz = trackDir.clone().sub(worldNormal.clone().multiplyScalar(trackDir.dot(worldNormal))).normalize();
+        if (trackHoriz.lengthSq() > 0.001) {
+          const worldNorth = north.clone().applyQuaternion(visualMesh.quaternion).normalize();
+          const northHoriz = worldNorth.clone().sub(worldNormal.clone().multiplyScalar(worldNorth.dot(worldNormal))).normalize();
+          const rightHoriz = new THREE.Vector3().crossVectors(northHoriz, worldNormal).normalize();
+          const yawToTarget = Math.atan2(trackHoriz.dot(rightHoriz), trackHoriz.dot(northHoriz));
+          surfaceYaw = -yawToTarget;
         }
       }
 
       // Debug values
       debugSunAlt = sunAlt;
+      debugTargetAlt = targetBodyAlt;
       const centerSunDir = new THREE.Vector3().subVectors(sunMesh.position, targetMesh.position).normalize();
       debugSunAltCenter = Math.asin(Math.max(-1, Math.min(1, centerSunDir.dot(worldNormal))));
       const sunHoriz = sunDir.clone().sub(worldNormal.clone().multiplyScalar(sunDir.dot(worldNormal))).normalize();
+      const targetHoriz = targetBodyDir.clone().sub(worldNormal.clone().multiplyScalar(targetBodyDir.dot(worldNormal))).normalize();
       const forwardDir = lookDir.clone().applyQuaternion(visualMesh.quaternion).normalize();
-      if (sunHoriz.lengthSq() > 0.001 && forwardDir.lengthSq() > 0.001) {
+      if (forwardDir.lengthSq() > 0.001) {
         const fwdHoriz = forwardDir.clone().sub(worldNormal.clone().multiplyScalar(forwardDir.dot(worldNormal))).normalize();
         const rightHoriz = new THREE.Vector3().crossVectors(fwdHoriz, worldNormal).normalize();
-        debugSunAzimuth = Math.atan2(sunHoriz.dot(rightHoriz), sunHoriz.dot(fwdHoriz));
-        debugYawDiff = debugSunAzimuth;
+        if (sunHoriz.lengthSq() > 0.001) {
+          debugSunAzimuth = Math.atan2(sunHoriz.dot(rightHoriz), sunHoriz.dot(fwdHoriz));
+          debugYawDiff = debugSunAzimuth;
+        }
+        if (targetHoriz.lengthSq() > 0.001) {
+          debugTargetAz = Math.atan2(targetHoriz.dot(rightHoriz), targetHoriz.dot(fwdHoriz));
+        }
       }
       debugDayFraction = Math.max(0, Math.min(1, 0.5 + debugSunAlt / Math.PI));
 
@@ -1734,7 +1761,6 @@
           sunAlt: (sunAlt * 180 / Math.PI).toFixed(2),
           surfacePitch: (surfacePitch * 180 / Math.PI).toFixed(2),
           surfaceYaw: (surfaceYaw * 180 / Math.PI).toFixed(2),
-          sunHorizLenSq: (window._debugSunHorizLenSq || 0).toFixed(6),
           frameCount: window._frameCount || 0,
           visualMeshType: typeof visualMesh,
           mivExists: !!miv,
@@ -1791,12 +1817,31 @@
       const latDir = surfaceLat >= 0 ? 'N' : 'S';
       const lonDir = surfaceLon >= 0 ? 'E' : 'W';
 
+      const isEarth = surfaceBody === 'earth';
+      const targetName = isEarth ? '月亮' : '地球';
+      document.getElementById('dbg-target-alt-label').textContent = targetName + '高度';
+      document.getElementById('dbg-target-az-label').textContent = targetName + '方位';
+      document.getElementById('track-body').textContent = targetName;
+
+      const sunAzDeg = (debugSunAzimuth * 180 / Math.PI).toFixed(1);
+      const targetAltDeg = (debugTargetAlt * 180 / Math.PI).toFixed(1);
+      const targetAzDeg = (debugTargetAz * 180 / Math.PI).toFixed(1);
+      const trackNames = { off: '关', sun: '日', body: targetName };
+
       document.getElementById('dbg-coord').textContent = `${latDir} ${latDeg.toFixed(2)}°, ${lonDir} ${lonDeg.toFixed(2)}°`;
       document.getElementById('dbg-date').textContent = dateStr;
-      document.getElementById('dbg-alt').textContent = `${altDeg}°`;
+      document.getElementById('dbg-sun-alt').textContent = `${altDeg}°`;
+      document.getElementById('dbg-sun-az').textContent = `${sunAzDeg}°`;
+      document.getElementById('dbg-target-alt').textContent = `${targetAltDeg}°`;
+      document.getElementById('dbg-target-az').textContent = `${targetAzDeg}°`;
       document.getElementById('dbg-camalt').textContent = `${camAltDeg}°`;
       document.getElementById('dbg-yaw').textContent = `${yawDeg.toFixed(1)}°`;
-      document.getElementById('dbg-track').textContent = surfaceAutoTrack ? '开' : '关';
+      document.getElementById('dbg-track').textContent = trackNames[surfaceAutoTrack] || surfaceAutoTrack;
+
+      // Highlight active track button
+      ['track-off', 'track-sun', 'track-body'].forEach(id => {
+        document.getElementById(id).classList.toggle('active', surfaceAutoTrack === ({ 'track-off': 'off', 'track-sun': 'sun', 'track-body': 'body' })[id]);
+      });
     }
 
     // ============================================================
@@ -1870,6 +1915,21 @@
         spriteScreenX = spriteScreenY = spriteScreenZ = 0;
       }
 
+      // Target body screen projection (moon on earth, earth on moon)
+      if (cameraMode === 'earthSurface' || cameraMode === 'moonSurface') {
+        const isEarth = surfaceBody === 'earth';
+        const tbMesh = isEarth ? surfaceMoonRealMesh : surfaceEarthMesh;
+        camera.updateMatrixWorld(true);
+        camera.updateProjectionMatrix();
+        const tbNDC = tbMesh.position.clone().project(camera);
+        targetBodyOnScreen = Math.abs(tbNDC.x) <= 1.1 && Math.abs(tbNDC.y) <= 1.1 && tbNDC.z >= -1 && tbNDC.z <= 1;
+        targetBodyScreenX = tbNDC.x;
+        targetBodyScreenY = tbNDC.y;
+      } else {
+        targetBodyOnScreen = false;
+        targetBodyScreenX = targetBodyScreenY = 0;
+      }
+
       // Fixed pixel size for azimuth tick lines (computed in visualMesh local space)
       if (surfaceTickData.length && surfaceTickLines.length) {
         const parent = surfaceTickLines[0].parent;
@@ -1902,7 +1962,7 @@
 
       updateDebugOverlay();
       // Expose debug state for Playwright tests
-      window.__dbg = { debugSunAlt, debugSunAltCenter, debugSunAzimuth, debugDayFraction, debugCamAlt, debugCamSunAlt, simDayOffset, surfaceYaw, surfacePitch, surfaceAutoTrack, playing, spriteOnScreen, spriteScreenX, spriteScreenY, spriteScreenZ, cameraMode, sunMeshVisible: sunMesh.visible, sunSpriteVisible: surfaceSunSprite ? surfaceSunSprite.visible : null, frameCount: window._frameCount || 0 };
+      window.__dbg = { debugSunAlt, debugSunAltCenter, debugSunAzimuth, debugTargetAlt, debugTargetAz, debugDayFraction, debugCamAlt, debugCamSunAlt, simDayOffset, surfaceYaw, surfacePitch, surfaceAutoTrack, playing, spriteOnScreen, spriteScreenX, spriteScreenY, spriteScreenZ, cameraMode, sunMeshVisible: sunMesh.visible, sunSpriteVisible: surfaceSunSprite ? surfaceSunSprite.visible : null, frameCount: window._frameCount || 0, targetBodyOnScreen, targetBodyScreenX, targetBodyScreenY };
     window.__setSimDayOffset = (v) => { simDayOffset = v; updateBodies(); updateUI(); };
     window.__setAutoTrack = (v) => { surfaceAutoTrack = v; };
       composer.render();

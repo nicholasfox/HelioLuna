@@ -48,7 +48,7 @@ test('debug overlay shows correct values in surface mode', async ({ page }) => {
 
   const text = await debugEl.textContent();
   expect(text).toContain('太阳高度');
-  expect(text).toContain('相机实际俯仰');
+  expect(text).toContain('相机俯仰');
   expect(text).toContain('相机偏航');
 
   const dbg = await getDbg(page);
@@ -184,6 +184,6 @@ test('autoTrack keeps camera aligned with Sun', async ({ page }) => {
   // Debug overlay should show camera info
   const overlay = page.locator('#debug-overlay');
   const text = await overlay.textContent();
-  expect(text).toContain('相机实际俯仰');
+  expect(text).toContain('相机俯仰');
   expect(text).toContain('autoTrack');
 });
